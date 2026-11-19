@@ -1,7 +1,6 @@
 name: Tasks fork - screen previews
 
-# Builds the X4 Pro simulator for each list arrangement named in
-# tasks_fork/preview/variants, photographs the Tasks app with canned Notion
+# Builds the X4 Pro simulator, photographs the Tasks app with canned Notion
 # replies (tasks_fork/preview/shoot.sh), and commits the PNGs and traces to
 # the tasks-shots branch. Runs on pushes to tasks-preview only: nothing here
 # builds firmware or publishes a release.
@@ -56,13 +55,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p shots
-          for v in $(cat tasks_fork/preview/variants); do
-            echo "::group::variant $v"
-            PLATFORMIO_BUILD_FLAGS="-DTASKS_VARIANT=$v" pio run -e simulator_x4_pro > "shots/v$v-build.log" 2>&1 || {
-              tail -60 "shots/v$v-build.log"; exit 1; }
-            tasks_fork/preview/shoot.sh .pio/build/simulator_x4_pro/program shots "v$v"
-            echo "::endgroup::"
-          done
+          pio run -e simulator_x4_pro > shots/build.log 2>&1 || { tail -60 shots/build.log; exit 1; }
+          tasks_fork/preview/shoot.sh .pio/build/simulator_x4_pro/program shots tasks
           ls -la shots
 
       - name: Commit shots to tasks-shots

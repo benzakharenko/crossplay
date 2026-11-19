@@ -14,8 +14,7 @@ constexpr int16_t kBoxGap = 16;
 constexpr int16_t kIndent = 36;        // per level of sub-item
 constexpr int16_t kRowPad = 12;        // above and below a row's text
 constexpr int16_t kMinRow = 72;        // a finger, with room to miss
-constexpr int16_t kHeaderRow = 44;     // variant 2's section label
-constexpr int16_t kTabHeight = 56;     // variant 1's tabs, variant 3's strips
+constexpr int16_t kTabHeight = 56;     // the MISSED and TOMORROW strips
 constexpr int16_t kStrike = 2;
 constexpr int kTitleLines = 2;
 constexpr int16_t kFooterHeight = toybox::kPillHeight;
@@ -124,11 +123,6 @@ int16_t textWidth(const fui::DeviceContext& device, const Row& row) {
 
 RowPlan planRow(const fui::DrawTarget& target, const fui::DeviceContext& device, const Row& row) {
   RowPlan plan;
-  if (row.header) {
-    plan.lines.push_back(row.title);
-    plan.height = kHeaderRow;
-    return plan;
-  }
   const fui::TextStyle title = plain(toybox::kBodyFont);
   const fui::TextStyle small = plain(toybox::kTileFont);
   const int16_t width = textWidth(device, row);
@@ -166,14 +160,6 @@ void hit(toybox::Screen& screen, const fui::Rect& rect, const fui::ActionId acti
 void drawRow(toybox::Screen& screen, const fui::Rect& box, const Row& row, const RowPlan& plan, const int index,
              const bool rule) {
   fui::DrawTarget& t = screen.target();
-  if (row.header) {
-    const fui::TextStyle small = plain(toybox::kTileFont);
-    const int16_t lh = t.lineHeight(small.font);
-    t.text(fui::makeRect(box.x, static_cast<int16_t>(box.y + box.height - lh - 6), box.width, lh), row.title, small);
-    t.fill(fui::makeRect(box.x, static_cast<int16_t>(box.y + box.height - 2), box.width, 2),
-           fui::Paint::solid(fui::Color::Black));
-    return;
-  }
   const int16_t indent = static_cast<int16_t>(kIndent * (row.depth > 2 ? 2 : row.depth));
   const fui::TextStyle title = plain(toybox::kBodyFont);
   const fui::TextStyle small = plain(toybox::kTileFont);
@@ -217,24 +203,11 @@ fui::Rect footerBand(const fui::DeviceContext& device) {
 }
 
 bool hasTopStrip(const ListModel& m) {
-#if TASKS_VARIANT == 1
-  (void)m;
-  return true;  // the tabs
-#elif TASKS_VARIANT == 3
   return m.section == Today && m.counts[Missed] > 0;
-#else
-  (void)m;
-  return false;
-#endif
 }
 
 bool hasBottomStrip(const ListModel& m) {
-#if TASKS_VARIANT == 3
   return m.section == Today && m.counts[Tomorrow] > 0;
-#else
-  (void)m;
-  return false;
-#endif
 }
 
 // The rows' band: under the chrome (and the top strip), above the bottom
@@ -248,8 +221,8 @@ fui::Rect rowBand(const fui::DrawTarget& target, const fui::DeviceContext& devic
   return fui::makeRect(toybox::kMargin, top, pageWidth(device), static_cast<int16_t>(bottom - top));
 }
 
-// Labels on strips, tabs and the footer's DONE are set in the small cut: four
-// tabs share 448px, and "TOMORROW 3" at the body cut needs 170 of them.
+// Labels on the strips and buttons are set in the small cut, the size every
+// Toybox button uses.
 void stripButton(toybox::Screen& screen, const fui::Rect& box, const char* label, const fui::ActionId action,
                  const int value, const bool selected) {
   fui::ButtonProps b;
@@ -261,19 +234,6 @@ void stripButton(toybox::Screen& screen, const fui::Rect& box, const char* label
   screen.button(b, box);
 }
 
-#if TASKS_VARIANT == 1
-void tabs(toybox::Screen& screen, const fui::DeviceContext& device, const ListModel& m) {
-  static constexpr const char* kNames[] = {"MISSED", "TODAY", "TMRW", "DONE"};
-  const int16_t w = static_cast<int16_t>((pageWidth(device) - 3 * 6) / 4);
-  for (int i = 0; i < 4; ++i) {
-    char label[24];
-    snprintf(label, sizeof(label), "%s %d", kNames[i], m.counts[i]);
-    stripButton(screen,
-                fui::makeRect(static_cast<int16_t>(toybox::kMargin + i * (w + 6)), toybox::kBodyTop, w, kTabHeight),
-                label, ActionSection, i, m.section == i);
-  }
-}
-#endif
 
 void footer(toybox::Screen& screen, const fui::DeviceContext& device, const ListModel& m, const bool doneButton) {
   const fui::Rect band = footerBand(device);
@@ -295,10 +255,6 @@ void footer(toybox::Screen& screen, const fui::DeviceContext& device, const List
 }
 
 const char* listTitle(const ListModel& m) {
-#if TASKS_VARIANT == 1
-  (void)m;
-  return "TASKS";
-#else
   switch (m.section) {
     case Missed:
       return "MISSED";
@@ -310,7 +266,6 @@ const char* listTitle(const ListModel& m) {
     default:
       return "TASKS";
   }
-#endif
 }
 
 }  // namespace
@@ -322,10 +277,7 @@ std::vector<int> listPageStarts(const fui::DrawTarget& target, const fui::Device
   int16_t used = 0;
   for (int i = 0; i < model.count; ++i) {
     const int16_t h = planRow(target, device, model.rows[i]).height;
-    // A section label never ends a page: it moves to the next with its rows.
-    const bool orphanHeader = model.rows[i].header && i + 1 < model.count &&
-                              used + h + planRow(target, device, model.rows[i + 1]).height > band.height;
-    if (used > 0 && (used + h > band.height || orphanHeader)) {
+    if (used > 0 && used + h > band.height) {
       starts.push_back(i);
       used = 0;
     }
@@ -339,20 +291,13 @@ void buildList(toybox::Screen& screen, const ListModel& m) {
   chrome(screen, listTitle(m), m.syncIcon, ActionSync);
   fui::DrawTarget& t = screen.target();
 
-#if TASKS_VARIANT == 1
-  tabs(screen, device, m);
-  const bool doneButton = false;
-#else
   const bool doneButton = m.section != Done;
-#endif
-#if TASKS_VARIANT == 3
   if (hasTopStrip(m)) {
     char label[32];
     snprintf(label, sizeof(label), "%d MISSED  >", m.counts[Missed]);
     stripButton(screen, fui::makeRect(toybox::kMargin, toybox::kBodyTop, pageWidth(device), kTabHeight), label,
                 ActionSection, Missed, true);
   }
-#endif
 
   const fui::Rect band = rowBand(t, device, m);
   if (m.count == 0) {
@@ -372,8 +317,7 @@ void buildList(toybox::Screen& screen, const ListModel& m) {
   for (int i = m.firstVisible; i < end; ++i) {
     const RowPlan plan = planRow(t, device, m.rows[i]);
     const bool last = i + 1 >= end;
-    const bool nextIsHeader = i + 1 < m.count && m.rows[i + 1].header;
-    drawRow(screen, fui::makeRect(band.x, y, band.width, plan.height), m.rows[i], plan, i, !last && !nextIsHeader);
+    drawRow(screen, fui::makeRect(band.x, y, band.width, plan.height), m.rows[i], plan, i, !last);
     y = static_cast<int16_t>(y + plan.height);
   }
 
@@ -383,7 +327,6 @@ void buildList(toybox::Screen& screen, const ListModel& m) {
     t.text(fui::makeRect(band.x, static_cast<int16_t>(band.y + band.height), band.width, lh), m.pageLabel, small);
   }
 
-#if TASKS_VARIANT == 3
   if (hasBottomStrip(m)) {
     char label[32];
     snprintf(label, sizeof(label), "TOMORROW %d  >", m.counts[Tomorrow]);
@@ -394,7 +337,6 @@ void buildList(toybox::Screen& screen, const ListModel& m) {
                               kTabHeight),
                 label, ActionSection, Tomorrow, false);
   }
-#endif
   footer(screen, device, m, doneButton);
 }
 

@@ -111,72 +111,42 @@ void TasksActivity::rebuild() {
   rowIds_.clear();
   titles_.clear();
   metas_.clear();
-  std::vector<std::pair<const char*, const std::vector<tasks::Row>*>> blocks;
+  const std::vector<tasks::Row>* list = &view_.today;
   switch (section_) {
-#if TASKS_VARIANT == 2
-    case tasksui::Today:
     case tasksui::Missed:
-    case tasksui::Tomorrow:
-      blocks = {{"MISSED", &view_.missed}, {"TODAY", &view_.today}, {"TOMORROW", &view_.tomorrow}};
-      break;
-#else
-    case tasksui::Missed:
-      blocks = {{nullptr, &view_.missed}};
-      break;
-    case tasksui::Today:
-      blocks = {{nullptr, &view_.today}};
+      list = &view_.missed;
       break;
     case tasksui::Tomorrow:
-      blocks = {{nullptr, &view_.tomorrow}};
+      list = &view_.tomorrow;
       break;
-#endif
     case tasksui::Done:
-      blocks = {{nullptr, &view_.completed}};
+      list = &view_.completed;
+      break;
+    case tasksui::Today:
       break;
   }
-  size_t total = 0;
-  for (const auto& b : blocks) total += b.second->size() + 1;
-  titles_.reserve(total);
-  metas_.reserve(total);
-  rowIds_.reserve(total);
-  for (const auto& b : blocks) {
-    if (b.first != nullptr) {
-      if (b.second->empty()) continue;
-      titles_.emplace_back(b.first);
-      metas_.emplace_back();
-      rowIds_.emplace_back();
-    }
-    for (const tasks::Row& r : *b.second) {
-      titles_.push_back(tasks::displayTitle(r.task.title));
-      std::string meta = tasks::displayText(r.task.category);
-      const std::string status = tasks::displayText(r.task.status);
-      if (!status.empty() && cfg_.statusKind != tasks::StatusKind::Checkbox) meta += (meta.empty() ? "" : " - ") + status;
-      const bool showDate = r.depth == 0 && (b.second == &view_.missed || b.second == &view_.completed);
-      if (showDate && !r.task.due.empty()) meta += (meta.empty() ? "" : " - ") + tasks::shortDate(r.task.due);
-      metas_.push_back(std::move(meta));
-      rowIds_.push_back(r.task.id);
-    }
+  const bool showDate = list == &view_.missed || list == &view_.completed;
+  titles_.reserve(list->size());
+  metas_.reserve(list->size());
+  rowIds_.reserve(list->size());
+  rows_.reserve(list->size());
+  for (const tasks::Row& r : *list) {
+    titles_.push_back(tasks::displayTitle(r.task.title));
+    std::string meta = tasks::displayText(r.task.category);
+    const std::string status = tasks::displayText(r.task.status);
+    if (!status.empty() && cfg_.statusKind != tasks::StatusKind::Checkbox) meta += (meta.empty() ? "" : " - ") + status;
+    if (showDate && r.depth == 0 && !r.task.due.empty()) meta += (meta.empty() ? "" : " - ") + tasks::shortDate(r.task.due);
+    metas_.push_back(std::move(meta));
+    rowIds_.push_back(r.task.id);
   }
   // Rows point into titles_/metas_, which are not resized past this point.
-  size_t k = 0;
-  for (const auto& b : blocks) {
-    if (b.first != nullptr) {
-      if (b.second->empty()) continue;
-      tasksui::Row h;
-      h.title = titles_[k].c_str();
-      h.header = true;
-      rows_.push_back(h);
-      ++k;
-    }
-    for (const tasks::Row& r : *b.second) {
-      tasksui::Row row;
-      row.title = titles_[k].c_str();
-      row.meta = metas_[k].empty() ? nullptr : metas_[k].c_str();
-      row.done = r.task.done;
-      row.depth = r.depth;
-      rows_.push_back(row);
-      ++k;
-    }
+  for (size_t k = 0; k < list->size(); ++k) {
+    tasksui::Row row;
+    row.title = titles_[k].c_str();
+    row.meta = metas_[k].empty() ? nullptr : metas_[k].c_str();
+    row.done = (*list)[k].task.done;
+    row.depth = (*list)[k].depth;
+    rows_.push_back(row);
   }
 
   // Keep the page in range after rows come and go.
@@ -359,13 +329,7 @@ void TasksActivity::back() {
     requestUpdate();
     return;
   }
-#if TASKS_VARIANT == 1
-  const bool atHome = true;
-#elif TASKS_VARIANT == 2
-  const bool atHome = section_ != tasksui::Done;
-#else
   const bool atHome = section_ == tasksui::Today;
-#endif
   if (screen_ == View::List && !atHome) {
     showSection(tasksui::Today);
     return;

@@ -12,23 +12,16 @@
 //   - the whole row is a tap target (a 40px box alone is a miss waiting to
 //     happen), split in two: the box checks off, the rest opens the task.
 //
-// TASKS_VARIANT picks the list's arrangement while three are compared
-// (CLAUDE.md: three variants, rendered, before any new screen):
-//   1  tabs:    MISSED / TODAY / TOMORROW / DONE across the top
-//   2  agenda:  one list with MISSED, TODAY and TOMORROW sections; DONE in
-//               the footer
-//   3  focus:   TODAY's list, with MISSED and TOMORROW as tappable strips
-//               above and below it; DONE in the footer
-// The winner stays and the macro goes, in the same commit.
+// The list leads with TODAY. MISSED and TOMORROW are strips above and below
+// it, each opening its own list, and DONE (the bin a check-off lands in) sits
+// in the footer. Chosen over tabs and over one stacked agenda, rendered side by
+// side: today keeps the most room, and a missed task is the first thing on
+// the screen.
 
 #include <cstdint>
 #include <vector>
 
 #include "../ui/ToyboxScreen.h"
-
-#ifndef TASKS_VARIANT
-#define TASKS_VARIANT 1
-#endif
 
 namespace tasksui {
 
@@ -53,11 +46,10 @@ struct Row {
   const char* meta = nullptr;  // "Work - In progress - Nov 15", small, under the title
   bool done = false;
   int depth = 0;               // sub-item nesting, indents the row
-  bool header = false;         // variant 2's section labels: not tappable
 };
 
 struct ListModel {
-  Section section = Today;  // the tab shown (1), or the list shown (3)
+  Section section = Today;  // the list shown
   int counts[4] = {0, 0, 0, 0};
   const Row* rows = nullptr;
   int count = 0;

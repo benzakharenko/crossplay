@@ -41,14 +41,12 @@ mkdir -p "$BUILD_DIR"
 "$BUILD_DIR/test_sync" "$(pwd)/fake" > "$BUILD_DIR/test_sync.log" || { cat "$BUILD_DIR/test_sync.log"; exit 1; }
 tail -1 "$BUILD_DIR/test_sync.log"
 
-# The screens, once per list arrangement while the three are compared.
+# The screens.
 SDK=../../freeink-sdk/libs/ui/FreeInkUI
 ICONS=../../freeink-sdk/libs/assets/Icons
-for v in 1 2 3; do
-  "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -Wno-comment -DTASKS_VARIANT=$v \
-    -I"$SDK/include" -I"$ICONS/include" \
-    "$SDK/src/FreeInkUI.cpp" \
-    ../../src/apps_local/tasks/TasksScreens.cpp \
-    test_screens.cpp -o "$BUILD_DIR/test_screens_$v"
-  "$BUILD_DIR/test_screens_$v"
-done
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -Wno-comment \
+  -I"$SDK/include" -I"$ICONS/include" \
+  "$SDK/src/FreeInkUI.cpp" \
+  ../../src/apps_local/tasks/TasksScreens.cpp \
+  test_screens.cpp -o "$BUILD_DIR/test_screens"
+"$BUILD_DIR/test_screens"

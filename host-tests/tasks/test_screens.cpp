@@ -1,6 +1,5 @@
 // Structural tests for TasksScreens: what each screen draws and what it makes
 // tappable, at the real cuts' line heights (toybox_10/20/30 = 21/42/63).
-// Built once per TASKS_VARIANT by run.sh.
 
 #include <cstdio>
 #include <cstring>
@@ -16,7 +15,7 @@ static int failures = 0;
 #define CHECK(c)                                                                         \
   do {                                                                                   \
     if (!(c)) {                                                                          \
-      std::fprintf(stderr, "variant %d %s:%d: FAIL %s\n", TASKS_VARIANT, __FILE__, __LINE__, #c); \
+      std::fprintf(stderr, "%s:%d: FAIL %s\n", __FILE__, __LINE__, #c); \
       ++failures;                                                                        \
     }                                                                                    \
   } while (0)
@@ -98,12 +97,12 @@ static void render(Rendered& out, Build build) {
 }
 
 static const Row kRows[] = {
-    {"Plan the week", "Personal - In progress", false, 0, false},
-    {"Pick three goals", nullptr, false, 1, false},
-    {"Review calendar", nullptr, false, 1, false},
-    {"Gym", "Health - Not started", false, 0, false},
+    {"Plan the week", "Personal - In progress", false, 0},
+    {"Pick three goals", nullptr, false, 1},
+    {"Review calendar", nullptr, false, 1},
+    {"Gym", "Health - Not started", false, 0},
     {"A title that is long enough that it really must wrap onto a second line and then some more words", "Work",
-     false, 0, false},
+     false, 0},
 };
 
 static ListModel listModel(const Row* rows, int count) {
@@ -149,16 +148,9 @@ static void testList() {
     if (run.text == "Pick three goals") childX = run.rect.x;
   }
   CHECK(childX > parentX);
-#if TASKS_VARIANT == 1
-  CHECK(r.target.drew("MISSED 2") || r.has(ActionSection, Missed));
-  CHECK(r.has(ActionSection, Done));
-#elif TASKS_VARIANT == 2
-  CHECK(r.has(ActionSection, Done));  // DONE in the footer
-#else
   CHECK(r.has(ActionSection, Missed));
   CHECK(r.has(ActionSection, Tomorrow));
   CHECK(r.has(ActionSection, Done));
-#endif
 }
 
 static void testPaging() {
@@ -166,7 +158,7 @@ static void testPaging() {
   char buf[40][32];
   for (int i = 0; i < 40; ++i) {
     snprintf(buf[i], sizeof(buf[i]), "Task number %d", i);
-    many.push_back(Row{buf[i], "Home", false, 0, false});
+    many.push_back(Row{buf[i], "Home", false, 0});
   }
   const ListModel m = listModel(many.data(), 40);
   Target t;
@@ -187,21 +179,24 @@ static void testPaging() {
   CHECK(r.has(ActionToggle, starts[1]));
 }
 
-static void testHeadersNeverOrphaned() {
+// Page one draws nothing from page two: drawing and paging use one rule.
+static void testPagesAgree() {
   std::vector<Row> rows;
   char buf[30][24];
   for (int i = 0; i < 30; ++i) {
     snprintf(buf[i], sizeof(buf[i]), "Item %d", i);
-    rows.push_back(Row{buf[i], nullptr, false, 0, i % 6 == 0});
+    rows.push_back(Row{buf[i], nullptr, false, 0});
   }
   const ListModel m = listModel(rows.data(), 30);
   Target t;
   const std::vector<int> starts = listPageStarts(t, device(), m);
-  for (size_t p = 1; p < starts.size(); ++p) CHECK(!rows[static_cast<size_t>(starts[p] - 1)].header);
-  // And the drawing agrees: page one draws nothing from page two.
+  CHECK(starts.size() > 1);
   Rendered r;
   render(r, [&](toybox::Screen& s) { buildList(s, m); });
-  if (starts.size() > 1) CHECK(!r.target.drew(buf[starts[1]]));
+  if (starts.size() > 1) {
+    CHECK(r.target.drew(buf[starts[1] - 1]));
+    CHECK(!r.target.drew(buf[starts[1]]));
+  }
 }
 
 static void testEmpty() {
@@ -252,7 +247,7 @@ static void testNotice() {
 int main() {
   testList();
   testPaging();
-  testHeadersNeverOrphaned();
+  testPagesAgree();
   testEmpty();
   testDetail();
   testNotice();
@@ -260,6 +255,6 @@ int main() {
     std::fprintf(stderr, "%d failure(s)\n", failures);
     return 1;
   }
-  std::printf("tasks screens (variant %d): all tests passed\n", TASKS_VARIANT);
+  std::printf("tasks screens: all tests passed\n");
   return 0;
 }
