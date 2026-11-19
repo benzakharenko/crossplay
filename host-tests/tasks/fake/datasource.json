@@ -1,4 +1,4 @@
-{"object":"data_source","id":"ds-fake-1","properties":{
+{"object":"data_source","id":"ds-fake-1","title":[{"plain_text":"MASTER TO DO LIST"}],"properties":{
  "Task":{"id":"title","name":"Task","type":"title"},
  "Category":{"id":"a","name":"Category","type":"select"},
  "Sub Category":{"id":"b","name":"Sub Category","type":"select"},

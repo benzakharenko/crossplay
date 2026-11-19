@@ -52,7 +52,8 @@ int main(int argc, char** argv) {
   CHECK(o.result == SyncResult::Ok);
   CHECK(o.sentOps == 1);
   CHECK(st.queue.empty());
-  // The database's first table (an archive) lacks the columns; the second fits.
+  // The link opens an empty "Name"-only database (the owner's first try); the
+  // real list is found by searching what the connection can see.
   CHECK(st.dataSourceId == "ds-fake-1");
   CHECK(st.databaseRef == cfg.databaseRef);
   CHECK(st.syncedAt > 0);
@@ -77,7 +78,8 @@ int main(int argc, char** argv) {
     State sa;
     const SyncOutcome oa = s2.sync(sa, today, nullptr);
     CHECK(oa.result == SyncResult::Failed);
-    CHECK(oa.message.find("Columns seen: Name (title), Archived on (created_time)") != std::string::npos);
+    CHECK(oa.message.find("has: Name (title), Archived on (created_time)") != std::string::npos);
+    CHECK(sa.dataSourceId.empty());  // an explicit table is not swapped for a searched one
   }
 
   // No clock: refuses before any request.

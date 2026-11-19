@@ -471,6 +471,38 @@ bool parseDatabaseReply(const std::string& body, std::vector<std::string>& dataS
   return true;
 }
 
+std::string searchBody(const std::string& cursor) {
+  std::string b = R"({"filter":{"property":"object","value":"data_source"},"page_size":100)";
+  if (!cursor.empty()) b += ",\"start_cursor\":\"" + jsonEscape(cursor) + "\"";
+  return b + "}";
+}
+
+bool parseSearchReply(const std::string& body, std::vector<std::string>& dataSourceIds, std::string& nextCursor,
+                      std::string& err) {
+  JsonDocument filter;
+  filter["object"] = true;
+  filter["message"] = true;
+  filter["has_more"] = true;
+  filter["next_cursor"] = true;
+  filter["results"][0]["object"] = true;
+  filter["results"][0]["id"] = true;
+  JsonDocument doc;
+  if (deserializeJson(doc, body, DeserializationOption::Filter(filter))) {
+    err = "Bad reply from Notion";
+    return false;
+  }
+  if (doc["object"] == "error") {
+    err = doc["message"] | "Notion returned an error";
+    return false;
+  }
+  for (JsonObjectConst r : doc["results"].as<JsonArrayConst>()) {
+    const char* id = r["id"] | "";
+    if (r["object"] == "data_source" && *id) dataSourceIds.emplace_back(id);
+  }
+  nextCursor = doc["has_more"].as<bool>() ? std::string(doc["next_cursor"] | "") : "";
+  return true;
+}
+
 std::string dataSourcePath(const std::string& dataSourceId) { return "/v1/data_sources/" + urlEncode(dataSourceId); }
 
 namespace {
@@ -495,6 +527,7 @@ bool resolveProperties(const std::string& schemaBody, Config& cfg, std::string& 
   filter["message"] = true;
   filter["properties"]["*"]["name"] = true;
   filter["properties"]["*"]["type"] = true;
+  filter["title"][0]["plain_text"] = true;
   JsonDocument doc;
   if (deserializeJson(doc, schemaBody, DeserializationOption::Filter(filter))) {
     err = "Bad reply from Notion";
@@ -567,7 +600,9 @@ bool resolveProperties(const std::string& schemaBody, Config& cfg, std::string& 
       if (!list.empty()) list += ", ";
       list += c.name + " (" + c.type + ")";
     }
-    return " Columns seen: " + list + ".";
+    std::string table;
+    for (JsonObjectConst part : doc["title"].as<JsonArrayConst>()) table += part["plain_text"] | "";
+    return " Table \"" + (table.empty() ? std::string("untitled") : table) + "\" has: " + list + ".";
   };
   if (due == nullptr) {
     err = "No date column named \"" + cfg.props.due + "\". Set properties.due in tasks.json." + seen();

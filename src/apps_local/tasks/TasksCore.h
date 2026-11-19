@@ -140,6 +140,13 @@ std::string extractNotionId(const std::string& linkOrId);
 std::string databasePath(const std::string& databaseId);
 bool parseDatabaseReply(const std::string& body, std::vector<std::string>& dataSourceIds, std::string& err);
 
+// POST /v1/search for every table the connection can see: the fallback when the
+// linked database's tables do not fit (a link copied from the wrong place).
+constexpr const char* kSearchPath = "/v1/search";
+std::string searchBody(const std::string& cursor = "");
+bool parseSearchReply(const std::string& body, std::vector<std::string>& dataSourceIds, std::string& nextCursor,
+                      std::string& err);
+
 // GET /v1/data_sources/{id}: the schema, whose property names the app
 // matches against tasks.json before every query.
 std::string dataSourcePath(const std::string& dataSourceId);

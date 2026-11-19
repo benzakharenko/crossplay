@@ -132,6 +132,7 @@ int TasksSync::call(const char* method, const std::string& path, const std::stri
     // Canned replies: databases.json, query.json, children.json; PATCHes succeed.
     std::string name = "patch.json";
     if (path.rfind("/v1/databases/", 0) == 0) name = "database.json";
+    if (path == "/v1/search") name = "search.json";
     if (path.rfind("/v1/data_sources/", 0) == 0) {
       // datasource-<id>.json when the fixture has one for that table.
       const std::string id = path.substr(std::string("/v1/data_sources/").size());
@@ -266,10 +267,35 @@ bool TasksSync::resolveSource(State& state, SyncOutcome& o, const Abort& shouldA
   // A cached table that stopped fitting (columns renamed) is forgotten, so the
   // next sync looks through the database's tables again.
   if (!fresh) state.dataSourceId.clear();
+
+  // The link led nowhere useful: try every table the connection can see. With
+  // a connection shared to one list, that is the list, whatever was linked.
+  std::vector<std::string> shared;
+  std::string cursor;
+  // A data_source_id set in tasks.json is taken as meant: no search.
+  for (int page = 0; page < 2 && cfg_.dataSourceId.empty(); ++page) {
+    std::string reply, err;
+    const int status = call("POST", kSearchPath, searchBody(cursor), reply, shouldAbort);
+    if (status != 200 || !parseSearchReply(reply, shared, cursor, err) || cursor.empty()) break;
+  }
+  int tried = 0;
+  for (const std::string& id : shared) {
+    if (std::find(candidates.begin(), candidates.end(), id) != candidates.end()) continue;
+    if (++tried > 10) break;  // bounds the requests on a connection shared widely
+    Config fitted;
+    std::string err;
+    if (fitColumns(id, fitted, err, shouldAbort) != 200) continue;
+    cfg_ = std::move(fitted);
+    dataSourceId_ = id;
+    state.dataSourceId = id;
+    state.databaseRef = cfg_.databaseRef;
+    LOG_INF(kTag, "linked table did not fit; found %s by search", id.c_str());
+    return true;
+  }
+
   o.result = SyncResult::Failed;
-  o.message = candidates.size() > 1 ? "None of the database's " + std::to_string(candidates.size()) +
-                                          " tables fit. First: " + firstErr
-                                    : firstErr;
+  o.message = "The linked database doesn't look like a task list. " + firstErr;
+  if (tried > 0) o.message += " No other shared table fit either.";
   return false;
 }
 
