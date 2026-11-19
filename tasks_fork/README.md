@@ -1,0 +1,75 @@
+# CrossPlay + Tasks (fork of a fork)
+
+This repo is [CrossPlay](https://github.com/ma-r-s/crossplay) (itself a fork of
+CrossPoint) plus a Notion **Tasks** app for the Seeed reTerminal Sticky.
+CrossPlay's own docs still apply; this file covers only what this fork adds.
+
+## Branches
+
+| Branch   | What it is |
+| -------- | ---------- |
+| `tasks`  | **Default branch.** CrossPlay + our changes. Releases are built from here. |
+| `xteink` | Untouched copy of CrossPlay, as forked. Not used by automation. |
+
+## How updates reach the device
+
+`.github/workflows/tasks-fork-sync.yml` runs daily, on every push to `tasks`,
+and on demand (Actions → *Tasks fork - sync CrossPlay and release* → Run):
+
+1. Merges CrossPlay's `xteink` into `tasks`. CrossPoint updates arrive through
+   CrossPlay, which merges them itself.
+2. If a conflict is only in a **seam file** (below), it takes CrossPlay's copy
+   and re-runs `tasks_fork/apply_seams.py`. Any other conflict stops the run;
+   GitHub emails you, and nothing is released.
+3. Builds `gh_release_sticky` and publishes release `vX.Y.Z` with
+   `firmware-sticky.bin` (what the device's updater downloads) and
+   `crossplay-tasks-<v>-sticky-full.bin` (first install over USB).
+
+On the Sticky: **Settings → Check for updates**.
+
+### Version numbers
+
+The updater compares only `major.minor.patch`, so the fork folds its build
+count into the patch: CrossPlay `1.16.1` → `1.16.201`, `1.16.202`, …; CrossPlay
+`1.16.2` → `1.16.301`. Always increasing; see `tasks_fork/next_version.py`.
+
+## Seam files (CrossPlay files we edit)
+
+| File | Edit |
+| ---- | ---- |
+| `src/network/ReleaseSources.h` | Update check asks only this repo's releases |
+| `src/apps_local/Shelf.cpp` | One `#include` + one `TASKS` row (once the app exists) |
+
+Everything else we add lives in new files: `tasks_fork/`,
+`src/apps_local/tasks/`, `host-tests/tasks/`, and the workflow.
+
+**Known side effect:** CrossPlay's `host-tests/devreport` expects the update
+check to hit CrossPlay's site first, so it fails in this fork. It is not run here.
+
+## One-time setup
+
+1. **Default branch → `tasks`.** Settings → General → Default branch.
+   Scheduled workflows only run from the default branch.
+2. **Enable Actions.** Actions tab → "I understand my workflows, go ahead and
+   enable them". The sync workflow switches CrossPlay's own workflows off on
+   its first run.
+3. **Add secret `SYNC_TOKEN`.** github.com/settings/personal-access-tokens →
+   Fine-grained token → only this repository → permissions *Contents:
+   Read and write* and *Workflows: Read and write*. Then repo Settings →
+   Secrets and variables → Actions → New secret `SYNC_TOKEN`.
+   (The built-in token cannot push merges that change workflow files, and
+   CrossPlay changes them often.)
+4. **First flash.** Download the `-full.bin` from the first release and flash
+   it over USB with Seeed's web flasher (Custom .bin). After that, updates are
+   over Wi-Fi.
+
+## When a run fails
+
+Open the failed run; the error names the conflicted file. Locally:
+
+```bash
+git fetch https://github.com/ma-r-s/crossplay.git xteink
+git merge FETCH_HEAD          # fix the conflict
+python3 tasks_fork/apply_seams.py
+git commit && git push        # the push triggers a release
+```
