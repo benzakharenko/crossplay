@@ -1,0 +1,12 @@
+{"object":"data_source","id":"ds-fake-1","properties":{
+ "Task":{"id":"title","name":"Task","type":"title"},
+ "Category":{"id":"a","name":"Category","type":"select"},
+ "Sub Category":{"id":"b","name":"Sub Category","type":"select"},
+ "Due Date Needed?":{"id":"c","name":"Due Date Needed?","type":"checkbox"},
+ "Priority":{"id":"d","name":"Priority","type":"select"},
+ "Due Date":{"id":"e","name":"Due Date","type":"date"},
+ "Status":{"id":"f","name":"Status","type":"status"},
+ "Estimated Time":{"id":"g","name":"Estimated Time","type":"number"},
+ "Notes":{"id":"h","name":"Notes","type":"rich_text"},
+ "Sub Item":{"id":"i","name":"Sub Item","type":"relation"},
+ "Parent Item":{"id":"j","name":"Parent Item","type":"relation"}}}

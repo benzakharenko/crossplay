@@ -51,6 +51,9 @@ class TasksSync {
 
   explicit TasksSync(const Config& cfg) : cfg_(cfg) {}
 
+  // The settings as fitted to the database's real columns by the last sync.
+  const Config& resolvedConfig() const { return cfg_; }
+
   // Sends queued ops, then refreshes state.tasks. On anything but Ok the
   // state keeps its last good list; ops Notion accepted are still dropped
   // from the queue.
@@ -62,13 +65,14 @@ class TasksSync {
   int call(const char* method, const std::string& path, const std::string& body, std::string& out,
            const Abort& shouldAbort);
   bool resolveDataSource(State& state, SyncOutcome& o, const Abort& shouldAbort);
+  bool resolveColumns(SyncOutcome& o, const Abort& shouldAbort);
   bool sendQueue(State& state, SyncOutcome& o, const Abort& shouldAbort);
   // Runs one query across its pages; build(cursor) makes each page's body.
   bool query(const std::function<std::string(const std::string&)>& build, int maxPages, std::vector<Task>& into,
              SyncOutcome& o, const Abort& shouldAbort);
   SyncOutcome fail(int status, const std::string& body);
 
-  const Config& cfg_;
+  Config cfg_;  // a copy: resolveColumns fits its property names
   std::string dataSourceId_;
 };
 

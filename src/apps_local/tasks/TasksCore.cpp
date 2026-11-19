@@ -254,6 +254,7 @@ std::string queryPath(const Config& cfg) {
                                 &cfg.props.priority, &cfg.props.notes,    &cfg.props.parent};
   char sep = '?';
   for (const std::string* n : names) {
+    if (n->empty()) continue;  // an optional column this database lacks
     path += sep;
     path += "filter_properties%5B%5D=" + urlEncode(*n);
     sep = '&';
@@ -346,6 +347,7 @@ bool parseQueryResponse(const std::string& body, const Config& cfg, QueryPage& o
   item["last_edited_time"] = true;
   for (const std::string* n : {&cfg.props.title, &cfg.props.category, &cfg.props.due, &cfg.props.status,
                                &cfg.props.priority, &cfg.props.notes, &cfg.props.parent}) {
+    if (n->empty()) continue;
     item["properties"][*n] = true;
   }
 
@@ -372,15 +374,18 @@ bool parseQueryResponse(const std::string& body, const Config& cfg, QueryPage& o
     Task t;
     t.id = r["id"] | "";
     if (t.id.empty()) continue;
-    t.title = propText(props[cfg.props.title]);
+    auto prop = [&](const std::string& name) -> JsonObjectConst {
+      return name.empty() ? JsonObjectConst() : props[name].as<JsonObjectConst>();
+    };
+    t.title = propText(prop(cfg.props.title));
     clipUtf8(t.title, kMaxTitleBytes);
-    t.category = propText(props[cfg.props.category]);
-    t.due = propText(props[cfg.props.due]);
-    t.status = propText(props[cfg.props.status]);
-    t.priority = propText(props[cfg.props.priority]);
-    t.notes = propText(props[cfg.props.notes]);
+    t.category = propText(prop(cfg.props.category));
+    t.due = propText(prop(cfg.props.due));
+    t.status = propText(prop(cfg.props.status));
+    t.priority = propText(prop(cfg.props.priority));
+    t.notes = propText(prop(cfg.props.notes));
     t.notesTruncated = clipUtf8(t.notes, kMaxNotesBytes);
-    t.parentId = props[cfg.props.parent]["relation"][0]["id"] | "";
+    t.parentId = prop(cfg.props.parent)["relation"][0]["id"] | "";
     t.lastEdited = std::string(r["last_edited_time"] | "").substr(0, 10);
     t.done = isDoneValue(cfg, t.status);
     page.tasks.push_back(std::move(t));
@@ -460,6 +465,121 @@ bool parseDatabaseReply(const std::string& body, std::string& dataSourceId, std:
     return false;
   }
   dataSourceId = id;
+  return true;
+}
+
+std::string dataSourcePath(const std::string& dataSourceId) { return "/v1/data_sources/" + urlEncode(dataSourceId); }
+
+namespace {
+
+std::string squash(const std::string& s) {
+  std::string out;
+  for (unsigned char c : s)
+    if (!std::isspace(c)) out += static_cast<char>(std::tolower(c));
+  return out;
+}
+
+struct Column {
+  std::string name;
+  std::string type;
+};
+
+}  // namespace
+
+bool resolveProperties(const std::string& schemaBody, Config& cfg, std::string& err) {
+  JsonDocument filter;
+  filter["object"] = true;
+  filter["message"] = true;
+  filter["properties"]["*"]["name"] = true;
+  filter["properties"]["*"]["type"] = true;
+  JsonDocument doc;
+  if (deserializeJson(doc, schemaBody, DeserializationOption::Filter(filter))) {
+    err = "Bad reply from Notion";
+    return false;
+  }
+  if (doc["object"] == "error") {
+    err = doc["message"] | "Notion returned an error";
+    return false;
+  }
+  std::vector<Column> cols;
+  for (JsonPairConst kv : doc["properties"].as<JsonObjectConst>()) {
+    // The key is the property's name; "name" repeats it on current API versions.
+    cols.push_back({kv.value()["name"] | kv.key().c_str(), kv.value()["type"] | ""});
+  }
+  if (cols.empty()) {
+    err = "Notion returned no columns for the database";
+    return false;
+  }
+
+  // types: the column types this role accepts; hint: a word the name should
+  // contain when picking by type among several.
+  // byTypeAlone: a required role may take the only column of its type whatever
+  // it is called; an optional one may not (the only select left could be any).
+  auto find = [&](const std::string& wanted, std::initializer_list<const char*> types, const char* hint,
+                  const bool byTypeAlone) -> const Column* {
+    auto typed = [&](const Column& c) {
+      for (const char* t : types)
+        if (c.type == t) return true;
+      return false;
+    };
+    for (const Column& c : cols)
+      if (c.name == wanted && typed(c)) return &c;
+    for (const Column& c : cols)
+      if (squash(c.name) == squash(wanted) && typed(c)) return &c;
+    const Column* only = nullptr;
+    int count = 0;
+    for (const Column& c : cols) {
+      if (!typed(c)) continue;
+      ++count;
+      only = &c;
+    }
+    if (byTypeAlone && count == 1) return only;
+    if (hint != nullptr) {
+      const Column* hinted = nullptr;
+      int hits = 0;
+      for (const Column& c : cols) {
+        if (!typed(c) || squash(c.name).find(hint) == std::string::npos) continue;
+        // "Due Date Needed?" is a question, not the date: prefer names without one.
+        if (hinted == nullptr || (hinted->name.find('?') != std::string::npos && c.name.find('?') == std::string::npos))
+          hinted = &c;
+        ++hits;
+      }
+      if (hits > 0) return hinted;
+    }
+    return nullptr;
+  };
+
+  Config out = cfg;
+  const Column* title = find(cfg.props.title, {"title"}, nullptr, true);
+  const Column* due = find(cfg.props.due, {"date"}, "due", true);
+  const Column* status = find(cfg.props.status, {"status", "select", "checkbox"}, "status", true);
+  if (title == nullptr) {
+    err = "The database has no title column";
+    return false;
+  }
+  if (due == nullptr) {
+    err = "No date column named \"" + cfg.props.due + "\". Set properties.due in tasks.json.";
+    return false;
+  }
+  if (status == nullptr) {
+    err = "No status column named \"" + cfg.props.status + "\". Set properties.status in tasks.json.";
+    return false;
+  }
+  out.props.title = title->name;
+  out.props.due = due->name;
+  out.props.status = status->name;
+  out.statusKind = status->type == "checkbox" ? StatusKind::Checkbox
+                   : status->type == "select" ? StatusKind::Select
+                                              : StatusKind::Status;
+  auto optional = [&](std::string& field, std::initializer_list<const char*> types, const char* hint) {
+    const Column* c = find(field, types, hint, false);
+    field = c != nullptr ? c->name : "";
+  };
+  optional(out.props.category, {"select", "multi_select", "status", "rich_text", "formula"}, "category");
+  optional(out.props.priority, {"select", "status", "multi_select", "number", "formula"}, "priority");
+  optional(out.props.notes, {"rich_text"}, "note");
+  optional(out.props.parent, {"relation"}, "parent");
+  cfg = std::move(out);
   return true;
 }
 

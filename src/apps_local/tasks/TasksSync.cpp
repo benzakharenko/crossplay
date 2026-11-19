@@ -132,6 +132,7 @@ int TasksSync::call(const char* method, const std::string& path, const std::stri
     // Canned replies: databases.json, query.json, children.json; PATCHes succeed.
     std::string name = "patch.json";
     if (path.rfind("/v1/databases/", 0) == 0) name = "database.json";
+    if (path.rfind("/v1/data_sources/", 0) == 0) name = "datasource.json";
     if (path.find("/query") != std::string::npos)
       name = body.find("\"relation\"") != std::string::npos ? "children.json" : "query.json";
     if (std::string(method) == "PATCH") return 200;
@@ -226,6 +227,24 @@ bool TasksSync::resolveDataSource(State& state, SyncOutcome& o, const Abort& sho
   return true;
 }
 
+bool TasksSync::resolveColumns(SyncOutcome& o, const Abort& shouldAbort) {
+  std::string reply;
+  const int status = call("GET", dataSourcePath(dataSourceId_), "", reply, shouldAbort);
+  if (status != 200) {
+    o = fail(status, reply);
+    return false;
+  }
+  std::string err;
+  if (!resolveProperties(reply, cfg_, err)) {
+    o.result = SyncResult::Failed;
+    o.message = err;
+    return false;
+  }
+  LOG_INF(kTag, "columns: title='%s' due='%s' status='%s' parent='%s'", cfg_.props.title.c_str(),
+          cfg_.props.due.c_str(), cfg_.props.status.c_str(), cfg_.props.parent.c_str());
+  return true;
+}
+
 bool TasksSync::sendQueue(State& state, SyncOutcome& o, const Abort& shouldAbort) {
   std::vector<std::string> sent;
   bool ok = true;
@@ -289,6 +308,7 @@ SyncOutcome TasksSync::sync(State& state, const std::string& today, const Abort&
     return o;
   }
   if (!resolveDataSource(state, o, shouldAbort)) return o;
+  if (!resolveColumns(o, shouldAbort)) return o;
   if (!sendQueue(state, o, shouldAbort)) return o;
   const int sentOps = o.sentOps;
   const std::string warning = o.warning;
@@ -302,7 +322,7 @@ SyncOutcome TasksSync::sync(State& state, const std::string& today, const Abort&
   // Sub-items of every open task shown, then theirs.
   std::vector<std::string> asked;
   size_t from = 0;
-  for (int round = 0; round < kChildRounds; ++round) {
+  for (int round = 0; round < kChildRounds && !cfg_.props.parent.empty(); ++round) {
     std::vector<std::string> parents;
     for (size_t i = from; i < all.size(); ++i) {
       const Task& t = all[i];

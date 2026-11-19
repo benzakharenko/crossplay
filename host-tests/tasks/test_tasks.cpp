@@ -479,6 +479,65 @@ static void testState() {
   CHECK(p.remembered.size() == 1 && p.remembered[0].id == "keep");
 }
 
+static std::string schema(const char* props) {
+  return std::string(R"({"object":"data_source","properties":{)") + props + "}}";
+}
+
+static void testColumns() {
+  // The owner's real columns, with the date's name typed differently from the
+  // default ("Due date " with a trailing space).
+  const std::string real = schema(
+      R"("Task":{"name":"Task","type":"title"},"Category":{"name":"Category","type":"select"},)"
+      R"("Sub Category":{"name":"Sub Category","type":"select"},)"
+      R"("Due Date Needed?":{"name":"Due Date Needed?","type":"checkbox"},)"
+      R"("Priority":{"name":"Priority","type":"select"},"Due date ":{"name":"Due date ","type":"date"},)"
+      R"("Status":{"name":"Status","type":"status"},"Notes":{"name":"Notes","type":"rich_text"},)"
+      R"("Sub Item":{"name":"Sub Item","type":"relation"},"Parent Item":{"name":"Parent Item","type":"relation"})");
+  Config c = config();
+  std::string err;
+  CHECK(resolveProperties(real, c, err));
+  CHECK_EQ(c.props.due, "Due date ");  // the real name, so the query uses it
+  CHECK_EQ(c.props.title, "Task");
+  CHECK_EQ(c.props.category, "Category");  // not Sub Category
+  CHECK_EQ(c.props.parent, "Parent Item");  // not Sub Item
+  CHECK(queryBody(c, "2026-11-19", "2026-11-20").find(R"("property":"Due date ")") != std::string::npos);
+
+  // Renamed everything: required roles found by type and hint, optional ones
+  // with no match left out of the request rather than guessed.
+  Config r = config();
+  CHECK(resolveProperties(
+      schema(R"("Name":{"name":"Name","type":"title"},"Created":{"name":"Created","type":"date"},)"
+             R"("Due":{"name":"Due","type":"date"},"State":{"name":"State","type":"select"},)"
+             R"("Area":{"name":"Area","type":"multi_select"})"),
+      r, err));
+  CHECK_EQ(r.props.title, "Name");
+  CHECK_EQ(r.props.due, "Due");
+  CHECK_EQ(r.props.status, "State");
+  CHECK(r.statusKind == StatusKind::Select);  // taken from the column's type
+  CHECK_EQ(r.props.category, "");
+  CHECK_EQ(r.props.priority, "");
+  CHECK_EQ(r.props.notes, "");
+  CHECK_EQ(r.props.parent, "");
+  CHECK(queryPath(r).find("Parent") == std::string::npos);
+  CHECK(queryPath(r).find("filter_properties%5B%5D=Name") != std::string::npos);
+
+  // Two selects, neither named like a status: refuse rather than guess.
+  Config amb = config();
+  CHECK(!resolveProperties(schema(R"("Name":{"name":"Name","type":"title"},"Due":{"name":"Due","type":"date"},)"
+                                  R"("State":{"name":"State","type":"select"},"Area":{"name":"Area","type":"select"})"),
+                           amb, err));
+  CHECK(err.find("properties.status") != std::string::npos);
+
+  // A date the app cannot tell apart: says which setting to fix.
+  Config n = config();
+  CHECK(!resolveProperties(schema(R"("Task":{"name":"Task","type":"title"},"Start":{"name":"Start","type":"date"},)"
+                                  R"("End":{"name":"End","type":"date"},"Status":{"name":"Status","type":"status"})"),
+                           n, err));
+  CHECK(err.find("properties.due") != std::string::npos);
+  CHECK(!resolveProperties(R"({"object":"error","message":"Could not find data source."})", n, err));
+  CHECK_EQ(err, "Could not find data source.");
+}
+
 static void testText() {
   CHECK_EQ(displayText("Caf\xC3\xA9 \xE2\x80\x9Cplans\xE2\x80\x9D \xE2\x80\x94 now"), "Cafe \"plans\" -- now");
   CHECK_EQ(displayText("  two\n lines\t here  "), "two lines here");
@@ -503,6 +562,7 @@ int main() {
   testLinks();
   testState();
   testText();
+  testColumns();
   if (failures) {
     std::fprintf(stderr, "%d failure(s)\n", failures);
     return 1;

@@ -139,6 +139,20 @@ std::string extractNotionId(const std::string& linkOrId);
 std::string databasePath(const std::string& databaseId);
 bool parseDatabaseReply(const std::string& body, std::string& dataSourceId, std::string& err);
 
+// GET /v1/data_sources/{id}: the schema, whose property names the app
+// matches against tasks.json before every query.
+std::string dataSourcePath(const std::string& dataSourceId);
+
+// Fits cfg.props to the database's real property names. Notion matches names
+// exactly, so a configured "Due Date" against a column called "Due date " would
+// fail every query. Each role is matched by exact name, then ignoring case and
+// spaces, then by type (the title column; a status column; a date column with
+// "due" in its name). The status role also sets cfg.statusKind from the
+// column's type. Optional roles (category, priority, notes, parent) that match
+// nothing are cleared and left out of requests. Returns false, with err naming
+// the setting to fix, when a required role (title, due, status) matches nothing.
+bool resolveProperties(const std::string& schemaBody, Config& cfg, std::string& err);
+
 // Error message from a Notion error reply, or empty.
 std::string errorMessage(const std::string& body);
 

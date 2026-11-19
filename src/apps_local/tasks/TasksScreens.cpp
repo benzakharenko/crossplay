@@ -248,10 +248,15 @@ void footer(toybox::Screen& screen, const fui::DeviceContext& device, const List
                 ActionSection, Done, false);
     textWidth = static_cast<int16_t>(band.width - bw - toybox::kGutter);
   }
+  // Two lines: a Notion error is a sentence, and its useful end is the part a
+  // single line would cut.
   const int16_t lh = t.lineHeight(small.font);
-  const std::string status = breakLines(t, m.status ? m.status : "", textWidth, 1, small).front();
-  t.text(fui::makeRect(band.x, static_cast<int16_t>(band.y + (band.height - lh) / 2), textWidth, lh), status.c_str(),
-         small);
+  const std::vector<std::string> lines = breakLines(t, m.status ? m.status : "", textWidth, 2, small);
+  int16_t y = static_cast<int16_t>(band.y + (band.height - lh * static_cast<int>(lines.size())) / 2);
+  for (const std::string& line : lines) {
+    t.text(fui::makeRect(band.x, y, textWidth, lh), line.c_str(), small);
+    y = static_cast<int16_t>(y + lh);
+  }
 }
 
 const char* listTitle(const ListModel& m) {
