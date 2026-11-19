@@ -108,3 +108,8 @@ site/wikipedia/mock/shards/
 # make the NEXT ship.sh die at its own preflight until somebody cleared it.
 dist/
 .pio/
+
+# tasks-fork: never commit Notion credentials
+tasks.json
+**/tasks.json
+*.notion-token
