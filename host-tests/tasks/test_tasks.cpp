@@ -402,10 +402,11 @@ static void testLinks() {
   CHECK_EQ(extractNotionId("https://www.notion.so/no-id-here"), "");
   CHECK_EQ(databasePath(want), "/v1/databases/" + want);
 
-  std::string ds, err;
+  std::vector<std::string> ds;
+  std::string err;
   CHECK(parseDatabaseReply(R"({"object":"database","id":"d","data_sources":[{"id":"ds-1","name":"Tasks"},{"id":"ds-2"}]})",
                            ds, err));
-  CHECK_EQ(ds, "ds-1");
+  CHECK(ds.size() == 2 && ds[0] == "ds-1" && ds[1] == "ds-2");
   CHECK(!parseDatabaseReply(R"({"object":"database","data_sources":[]})", ds, err));
   CHECK(!parseDatabaseReply(
       R"({"object":"error","status":404,"code":"object_not_found","message":"Could not find database."})", ds, err));

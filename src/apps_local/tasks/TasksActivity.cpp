@@ -261,6 +261,12 @@ void TasksActivity::runSync() {
       break;
     default:
       lastError_ = o.message;
+      // With nothing on the card to show, the error is the screen: a two-line
+      // footer would cut a column list in half.
+      if (state_.tasks.empty() && o.result == tasks::SyncResult::Failed) {
+        showNotice(o.message, true);
+        return;
+      }
       break;
   }
   rebuild();

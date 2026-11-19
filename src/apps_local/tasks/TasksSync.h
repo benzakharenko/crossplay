@@ -64,15 +64,18 @@ class TasksSync {
   // aborted. Notion's reply body lands in out.
   int call(const char* method, const std::string& path, const std::string& body, std::string& out,
            const Abort& shouldAbort);
-  bool resolveDataSource(State& state, SyncOutcome& o, const Abort& shouldAbort);
-  bool resolveColumns(SyncOutcome& o, const Abort& shouldAbort);
+  // Finds the table to read: the cached one, or each of the database's tables
+  // in turn until one has the columns the app needs. Fits cfg_ to it.
+  bool resolveSource(State& state, SyncOutcome& o, const Abort& shouldAbort);
+  // GET one table's columns and fit a copy of the settings to them.
+  int fitColumns(const std::string& dataSourceId, Config& fitted, std::string& err, const Abort& shouldAbort);
   bool sendQueue(State& state, SyncOutcome& o, const Abort& shouldAbort);
   // Runs one query across its pages; build(cursor) makes each page's body.
   bool query(const std::function<std::string(const std::string&)>& build, int maxPages, std::vector<Task>& into,
              SyncOutcome& o, const Abort& shouldAbort);
   SyncOutcome fail(int status, const std::string& body);
 
-  Config cfg_;  // a copy: resolveColumns fits its property names
+  Config cfg_;  // a copy: resolveSource fits its property names
   std::string dataSourceId_;
 };
 

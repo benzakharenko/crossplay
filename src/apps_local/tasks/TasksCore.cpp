@@ -445,7 +445,7 @@ std::string extractNotionId(const std::string& linkOrId) {
 
 std::string databasePath(const std::string& databaseId) { return "/v1/databases/" + urlEncode(databaseId); }
 
-bool parseDatabaseReply(const std::string& body, std::string& dataSourceId, std::string& err) {
+bool parseDatabaseReply(const std::string& body, std::vector<std::string>& dataSourceIds, std::string& err) {
   JsonDocument filter;
   filter["object"] = true;
   filter["message"] = true;
@@ -459,12 +459,15 @@ bool parseDatabaseReply(const std::string& body, std::string& dataSourceId, std:
     err = doc["message"] | "Notion returned an error";
     return false;
   }
-  const char* id = doc["data_sources"][0]["id"] | "";
-  if (!*id) {
+  dataSourceIds.clear();
+  for (JsonObjectConst ds : doc["data_sources"].as<JsonArrayConst>()) {
+    const char* id = ds["id"] | "";
+    if (*id) dataSourceIds.emplace_back(id);
+  }
+  if (dataSourceIds.empty()) {
     err = "That database has no data source the integration can see";
     return false;
   }
-  dataSourceId = id;
   return true;
 }
 
@@ -557,12 +560,21 @@ bool resolveProperties(const std::string& schemaBody, Config& cfg, std::string& 
     err = "The database has no title column";
     return false;
   }
+  // Names every column seen, so a photo of the error says what Notion sent.
+  auto seen = [&] {
+    std::string list;
+    for (const Column& c : cols) {
+      if (!list.empty()) list += ", ";
+      list += c.name + " (" + c.type + ")";
+    }
+    return " Columns seen: " + list + ".";
+  };
   if (due == nullptr) {
-    err = "No date column named \"" + cfg.props.due + "\". Set properties.due in tasks.json.";
+    err = "No date column named \"" + cfg.props.due + "\". Set properties.due in tasks.json." + seen();
     return false;
   }
   if (status == nullptr) {
-    err = "No status column named \"" + cfg.props.status + "\". Set properties.status in tasks.json.";
+    err = "No status column named \"" + cfg.props.status + "\". Set properties.status in tasks.json." + seen();
     return false;
   }
   out.props.title = title->name;

@@ -135,9 +135,10 @@ std::string restoreStatus(const Config& cfg, const std::string& previous);
 // the one in the path, not the ?v= view id.
 std::string extractNotionId(const std::string& linkOrId);
 
-// GET /v1/databases/{id} and the first data source id from its reply.
+// GET /v1/databases/{id}, and every data source id in its reply. A database
+// can hold several tables; the sync picks the one whose columns fit.
 std::string databasePath(const std::string& databaseId);
-bool parseDatabaseReply(const std::string& body, std::string& dataSourceId, std::string& err);
+bool parseDatabaseReply(const std::string& body, std::vector<std::string>& dataSourceIds, std::string& err);
 
 // GET /v1/data_sources/{id}: the schema, whose property names the app
 // matches against tasks.json before every query.

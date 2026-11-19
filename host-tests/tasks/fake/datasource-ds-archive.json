@@ -1,0 +1,3 @@
+{"object":"data_source","id":"ds-archive","properties":{
+ "Name":{"id":"title","name":"Name","type":"title"},
+ "Archived on":{"id":"a","name":"Archived on","type":"created_time"}}}

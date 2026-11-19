@@ -132,7 +132,12 @@ int TasksSync::call(const char* method, const std::string& path, const std::stri
     // Canned replies: databases.json, query.json, children.json; PATCHes succeed.
     std::string name = "patch.json";
     if (path.rfind("/v1/databases/", 0) == 0) name = "database.json";
-    if (path.rfind("/v1/data_sources/", 0) == 0) name = "datasource.json";
+    if (path.rfind("/v1/data_sources/", 0) == 0) {
+      // datasource-<id>.json when the fixture has one for that table.
+      const std::string id = path.substr(std::string("/v1/data_sources/").size());
+      std::ifstream specific(std::string(fake) + "/datasource-" + id + ".json");
+      name = specific ? "datasource-" + id + ".json" : "datasource.json";
+    }
     if (path.find("/query") != std::string::npos)
       name = body.find("\"relation\"") != std::string::npos ? "children.json" : "query.json";
     if (std::string(method) == "PATCH") return 200;
@@ -201,48 +206,71 @@ SyncOutcome TasksSync::fail(int status, const std::string& body) {
   return o;
 }
 
-bool TasksSync::resolveDataSource(State& state, SyncOutcome& o, const Abort& shouldAbort) {
-  if (!cfg_.dataSourceId.empty()) {
-    dataSourceId_ = cfg_.dataSourceId;
-    return true;
-  }
-  if (!state.dataSourceId.empty() && state.databaseRef == cfg_.databaseRef) {
-    dataSourceId_ = state.dataSourceId;
-    return true;
-  }
+int TasksSync::fitColumns(const std::string& dataSourceId, Config& fitted, std::string& err,
+                          const Abort& shouldAbort) {
   std::string reply;
-  const int status = call("GET", databasePath(extractNotionId(cfg_.databaseRef)), "", reply, shouldAbort);
+  const int status = call("GET", dataSourcePath(dataSourceId), "", reply, shouldAbort);
   if (status != 200) {
-    o = fail(status, reply);
-    return false;
+    err = errorMessage(reply);
+    return status;
   }
-  std::string err;
-  if (!parseDatabaseReply(reply, dataSourceId_, err)) {
-    o.result = SyncResult::Failed;
-    o.message = err;
-    return false;
-  }
-  state.dataSourceId = dataSourceId_;
-  state.databaseRef = cfg_.databaseRef;
-  return true;
+  fitted = cfg_;
+  return resolveProperties(reply, fitted, err) ? 200 : 422;
 }
 
-bool TasksSync::resolveColumns(SyncOutcome& o, const Abort& shouldAbort) {
-  std::string reply;
-  const int status = call("GET", dataSourcePath(dataSourceId_), "", reply, shouldAbort);
-  if (status != 200) {
-    o = fail(status, reply);
-    return false;
+bool TasksSync::resolveSource(State& state, SyncOutcome& o, const Abort& shouldAbort) {
+  std::vector<std::string> candidates;
+  bool fresh = false;
+  if (!cfg_.dataSourceId.empty()) {
+    candidates = {cfg_.dataSourceId};
+  } else if (!state.dataSourceId.empty() && state.databaseRef == cfg_.databaseRef) {
+    candidates = {state.dataSourceId};
+  } else {
+    std::string reply;
+    const int status = call("GET", databasePath(extractNotionId(cfg_.databaseRef)), "", reply, shouldAbort);
+    if (status != 200) {
+      o = fail(status, reply);
+      return false;
+    }
+    std::string err;
+    if (!parseDatabaseReply(reply, candidates, err)) {
+      o.result = SyncResult::Failed;
+      o.message = err;
+      return false;
+    }
+    fresh = true;
   }
-  std::string err;
-  if (!resolveProperties(reply, cfg_, err)) {
-    o.result = SyncResult::Failed;
-    o.message = err;
-    return false;
+
+  std::string firstErr;
+  for (const std::string& id : candidates) {
+    Config fitted;
+    std::string err;
+    const int status = fitColumns(id, fitted, err, shouldAbort);
+    if (status == 200) {
+      cfg_ = std::move(fitted);
+      dataSourceId_ = id;
+      state.dataSourceId = id;
+      state.databaseRef = cfg_.databaseRef;
+      LOG_INF(kTag, "table %s: title='%s' due='%s' status='%s' parent='%s'", id.c_str(), cfg_.props.title.c_str(),
+              cfg_.props.due.c_str(), cfg_.props.status.c_str(), cfg_.props.parent.c_str());
+      return true;
+    }
+    if (status != 422) {  // Notion or the network failed, not the columns
+      o = fail(status, "");
+      if (!err.empty() && status > 0) o.message = err;
+      return false;
+    }
+    LOG_INF(kTag, "table %s does not fit: %s", id.c_str(), err.c_str());
+    if (firstErr.empty()) firstErr = err;
   }
-  LOG_INF(kTag, "columns: title='%s' due='%s' status='%s' parent='%s'", cfg_.props.title.c_str(),
-          cfg_.props.due.c_str(), cfg_.props.status.c_str(), cfg_.props.parent.c_str());
-  return true;
+  // A cached table that stopped fitting (columns renamed) is forgotten, so the
+  // next sync looks through the database's tables again.
+  if (!fresh) state.dataSourceId.clear();
+  o.result = SyncResult::Failed;
+  o.message = candidates.size() > 1 ? "None of the database's " + std::to_string(candidates.size()) +
+                                          " tables fit. First: " + firstErr
+                                    : firstErr;
+  return false;
 }
 
 bool TasksSync::sendQueue(State& state, SyncOutcome& o, const Abort& shouldAbort) {
@@ -307,8 +335,7 @@ SyncOutcome TasksSync::sync(State& state, const std::string& today, const Abort&
     o.message = "The clock isn't set yet. Connect to Wi-Fi once.";
     return o;
   }
-  if (!resolveDataSource(state, o, shouldAbort)) return o;
-  if (!resolveColumns(o, shouldAbort)) return o;
+  if (!resolveSource(state, o, shouldAbort)) return o;
   if (!sendQueue(state, o, shouldAbort)) return o;
   const int sentOps = o.sentOps;
   const std::string warning = o.warning;

@@ -52,6 +52,7 @@ int main(int argc, char** argv) {
   CHECK(o.result == SyncResult::Ok);
   CHECK(o.sentOps == 1);
   CHECK(st.queue.empty());
+  // The database's first table (an archive) lacks the columns; the second fits.
   CHECK(st.dataSourceId == "ds-fake-1");
   CHECK(st.databaseRef == cfg.databaseRef);
   CHECK(st.syncedAt > 0);
@@ -67,6 +68,17 @@ int main(int argc, char** argv) {
   int plans = 0;
   for (const Task& task : st.tasks) plans += task.id == "t-plan-cal" ? 1 : 0;
   CHECK(plans == 1);
+
+  // A table with nothing usable says what it saw.
+  {
+    Config only = cfg;
+    only.dataSourceId = "ds-archive";
+    TasksSync s2(only);
+    State sa;
+    const SyncOutcome oa = s2.sync(sa, today, nullptr);
+    CHECK(oa.result == SyncResult::Failed);
+    CHECK(oa.message.find("Columns seen: Name (title), Archived on (created_time)") != std::string::npos);
+  }
 
   // No clock: refuses before any request.
   State st2;
