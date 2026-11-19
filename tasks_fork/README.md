@@ -33,6 +33,21 @@ The updater compares only `major.minor.patch`, so the fork folds its build
 count into the patch: CrossPlay `1.16.1` → `1.16.201`, `1.16.202`, …; CrossPlay
 `1.16.2` → `1.16.301`. Always increasing; see `tasks_fork/next_version.py`.
 
+## The Tasks app
+
+Shows Notion tasks due **today**, plus **missed** (past due, not done) and
+**tomorrow**. Tap to check off; open a task to see priority and notes.
+Sub-items (the `Parent Item` relation) appear under their parent. Checked-off
+tasks leave the lists and wait in a **Completed** bin for `completed_days`
+(default 2), where they can be restored to their earlier status.
+
+- `src/apps_local/tasks/TasksCore.*`: Notion requests and parsing, no I/O.
+  Tested by `host-tests/tasks/run.sh` (runs in the release workflow).
+- Settings live on the SD card at `/.crosspoint/tasks.json`, never in this
+  repo. Copy `tasks_fork/tasks.example.json`, fill in the token and data source
+  id. Only `token` and `data_source_id` are required; the rest default to the
+  values shown there.
+
 ## Seam files (CrossPlay files we edit)
 
 | File | Edit |

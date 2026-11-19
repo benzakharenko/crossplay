@@ -1,0 +1,20 @@
+{
+  "token": "PASTE_YOUR_NOTION_INTEGRATION_SECRET_HERE",
+  "data_source_id": "PASTE_THE_DATA_SOURCE_ID_HERE",
+
+  "properties": {
+    "title": "Task",
+    "category": "Category",
+    "due": "Due Date",
+    "status": "Status",
+    "priority": "Priority",
+    "notes": "Notes",
+    "parent": "Parent Item"
+  },
+
+  "status_type": "status",
+  "done": ["Completed"],
+  "open": "Not started",
+  "completed_days": 2,
+  "priority_order": ["High", "Medium", "Low"]
+}
