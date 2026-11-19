@@ -82,6 +82,25 @@ int main(int argc, char** argv) {
     CHECK(sa.dataSourceId.empty());  // an explicit table is not swapped for a searched one
   }
 
+  // On leaving: only the queue goes out; the lists are left as they were.
+  {
+    State sl;
+    sl.tasks = st.tasks;
+    PendingOp done;
+    done.id = "t-gym";
+    done.done = true;
+    done.status = "Completed";
+    sl.queue.push_back(done);
+    TasksSync leaving(cfg);
+    const SyncOutcome ol = leaving.sendOnly(sl, nullptr);
+    CHECK(ol.result == SyncResult::Ok);
+    CHECK(ol.sentOps == 1);
+    CHECK(sl.queue.empty());
+    CHECK(sl.tasks.size() == st.tasks.size());
+    State none;
+    CHECK(leaving.sendOnly(none, nullptr).result == SyncResult::Ok);  // nothing to send: no requests
+  }
+
   // No clock: refuses before any request.
   State st2;
   CHECK(sync.sync(st2, "", nullptr).result == SyncResult::NoClock);

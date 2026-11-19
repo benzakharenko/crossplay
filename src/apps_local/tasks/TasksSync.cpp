@@ -354,6 +354,23 @@ bool TasksSync::query(const std::function<std::string(const std::string&)>& buil
   return true;
 }
 
+SyncOutcome TasksSync::sendOnly(State& state, const Abort& shouldAbort) {
+  SyncOutcome o;
+  if (state.queue.empty()) {
+    o.result = SyncResult::Ok;
+    return o;
+  }
+  if (!resolveSource(state, o, shouldAbort)) return o;
+  if (!sendQueue(state, o, shouldAbort)) return o;
+  const int sent = o.sentOps;
+  const std::string warning = o.warning;
+  o = SyncOutcome();
+  o.result = SyncResult::Ok;
+  o.sentOps = sent;
+  o.warning = warning;
+  return o;
+}
+
 SyncOutcome TasksSync::sync(State& state, const std::string& today, const Abort& shouldAbort) {
   SyncOutcome o;
   if (today.empty()) {

@@ -23,9 +23,6 @@ namespace fui = freeink::ui;
 namespace {
 
 constexpr const char* kTag = "TASKS";
-// Taps are gathered for this long before they go to Notion, so ticking off
-// five things is one sync, not five.
-constexpr unsigned long kSyncDebounceMs = 4000;
 // After Wi-Fi comes up the clock is set by SNTP a moment later; wait this long
 // for it before giving up on knowing what "today" is.
 constexpr unsigned long kClockWaitMs = 8000;
@@ -175,7 +172,6 @@ void TasksActivity::setChecked(const std::string& id, const bool done) {
   const std::string day = today_.empty() ? tasks::store::today() : today_;
   tasks::markDone(state_, cfg_, id, done, day.empty() ? "1970-01-01" : day);
   tasks::store::saveState(state_);
-  lastChangeMs_ = millis();
   rebuild();
   interactionsReady_ = false;
   requestUpdate();
@@ -212,10 +208,11 @@ void TasksActivity::askSync() {
 
 bool TasksActivity::pollDuringSync() {
   mappedInput.update();
-  if (mappedInput.wasHomeGesture() || (gpio.hasHomeKey() && gpio.wasHomeKeyPressed()) ||
-      mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+  if (mappedInput.wasHomeGesture() || (gpio.hasHomeKey() && gpio.wasHomeKeyPressed())) {
     aborted_ = true;
+    homeDuringSync_ = true;
   }
+  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) aborted_ = true;
   return aborted_;
 }
 
@@ -340,7 +337,49 @@ void TasksActivity::back() {
     showSection(tasksui::Today);
     return;
   }
-  shelf::leave(renderer, mappedInput);
+  leave(Leave::Shelf);
+}
+
+bool TasksActivity::handleHomeGesture() {
+  if (leaving_ != Leave::None || syncing_) return true;  // already on the way out
+  leave(Leave::Home);
+  return true;
+}
+
+void TasksActivity::leave(const Leave where) {
+  const bool canSend = haveConfig_ && !state_.queue.empty() && WiFi.status() == WL_CONNECTED;
+  if (canSend) {
+    leaving_ = where;
+    interactionsReady_ = false;
+    requestUpdate();
+    return;  // the loop sends, then leaves
+  }
+  // Offline: the changes stay queued on the card for the next visit.
+  if (where == Leave::Home) {
+    onGoHome();
+  } else {
+    shelf::leave(renderer, mappedInput);
+  }
+}
+
+void TasksActivity::runSendAndLeave() {
+  const Leave where = leaving_;
+  syncing_ = true;
+  aborted_ = false;
+  requestUpdateAndWait();
+  tasks::TasksSync sync(cfg_);
+  const tasks::SyncOutcome o = sync.sendOnly(state_, [this] { return pollDuringSync(); });
+  LOG_INF(kTag, "on leaving: %s, %d change(s) sent, %u still queued", tasks::syncResultName(o.result), o.sentOps,
+          static_cast<unsigned>(state_.queue.size()));
+  tasks::store::saveState(state_);
+  syncing_ = false;
+  leaving_ = Leave::None;
+  // Left either way: whatever did not go out is on the card for next time.
+  if (where == Leave::Home) {
+    onGoHome();
+  } else {
+    shelf::leave(renderer, mappedInput);
+  }
 }
 
 void TasksActivity::page(const bool down) {
@@ -371,19 +410,16 @@ void TasksActivity::loop() {
     askSync();
     return;
   }
-  if (syncPending_) {
-    syncPending_ = false;
-    runSync();
-    if (mappedInput.wasHomeGesture()) onGoHome();
+  if (leaving_ != Leave::None) {
+    runSendAndLeave();
     return;
   }
-  // Check-offs gathered for a few seconds go to Notion together, when Wi-Fi
-  // is already up; nobody is asked to join a network for a tap.
-  if (!state_.queue.empty() && haveConfig_ && !offline_ && lastChangeMs_ != 0 &&
-      millis() - lastChangeMs_ > kSyncDebounceMs && WiFi.status() == WL_CONNECTED) {
-    lastChangeMs_ = 0;
-    syncPending_ = true;
-    requestUpdate();
+  if (syncPending_) {
+    syncPending_ = false;
+    homeDuringSync_ = false;
+    runSync();
+    // The gesture that cancelled the sync was spent inside it; act on it here.
+    if (homeDuringSync_) leave(Leave::Home);
     return;
   }
 
@@ -459,6 +495,30 @@ void TasksActivity::render(RenderLock&&) {
   // elsewhere); the list is shown instead of a blank page.
   if (screen_ == View::Detail && findTask(detailId_) == nullptr) screen_ = View::List;
   const std::string status = statusLine();
+  // The radio holds the loop while it works, so the list could not take a tap:
+  // the whole screen says what is happening instead of a list that looks live.
+  const bool busy = haveConfig_ && screen_ != View::Notice &&
+                    (syncing_ || syncPending_ || syncOnOpen_ || leaving_ != Leave::None);
+  if (busy) {
+    char prose[160];
+    const size_t waiting = state_.queue.size();
+    if (leaving_ != Leave::None) {
+      snprintf(prose, sizeof(prose), "Sending %u change%s to Notion before closing. Back skips this; they will go next time.",
+               static_cast<unsigned>(waiting), waiting == 1 ? "" : "s");
+    } else if (waiting > 0) {
+      snprintf(prose, sizeof(prose), "Syncing with Notion: sending %u change%s, then fetching your tasks. Back cancels.",
+               static_cast<unsigned>(waiting), waiting == 1 ? "" : "s");
+    } else {
+      snprintf(prose, sizeof(prose), "Syncing with Notion: fetching your tasks. One moment. Back cancels.");
+    }
+    tasksui::NoticeModel m;
+    m.title = "SYNCING";
+    m.prose = prose;
+    tasksui::buildNotice(screen, m);
+    interactionsReady_ = true;
+    renderer.displayBuffer();
+    return;
+  }
   switch (screen_) {
     case View::List: {
       tasksui::ListModel m;

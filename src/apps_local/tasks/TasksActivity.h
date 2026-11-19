@@ -11,9 +11,11 @@
 // When it talks to Notion:
 //   - on opening, over Wi-Fi (the picker is raised if Wi-Fi is down, and
 //     declining shows the list on the card, marked offline);
-//   - a few seconds after the last check-off, so a run of taps is one sync;
-//   - when the sync icon is tapped.
-// Nothing in the background and no timer wake.
+//   - when the sync icon is tapped;
+//   - on the way out (Back or Home), to send the check-offs made this visit.
+// Check-offs themselves never wait on the radio: each is saved to the card and
+// shown at once. While the radio is busy the whole screen says so, since the
+// list cannot take taps. Nothing in the background and no timer wake.
 
 #include <cstdint>
 #include <memory>
@@ -40,6 +42,7 @@ class TasksActivity final : public Activity {
   void onExit() override;
   void render(RenderLock&&) override;
   bool preventAutoSleep() override { return syncing_ || syncPending_; }
+  bool handleHomeGesture() override;
 
  private:
   enum class View : uint8_t { List, Detail, Notice };
@@ -51,8 +54,11 @@ class TasksActivity final : public Activity {
   const tasks::Task* findTask(const std::string& id) const;
 
   // --- Sync ---------------------------------------------------------------
+  enum class Leave : uint8_t { None, Shelf, Home };
   void askSync();     // raises the Wi-Fi picker when needed
   void runSync();     // holds the loop until done or abandoned
+  void runSendAndLeave();
+  void leave(Leave where);  // sends queued changes first when Wi-Fi is up
   bool pollDuringSync();
 
   // --- Navigation ---------------------------------------------------------
@@ -85,10 +91,11 @@ class TasksActivity final : public Activity {
   bool syncing_ = false;
   bool syncPending_ = false;        // run on the next loop pass
   bool syncOnOpen_ = true;
-  unsigned long lastChangeMs_ = 0;  // for the debounced sync after taps
+  Leave leaving_ = Leave::None;  // set while the queue goes out on the way out
   bool offline_ = false;
   std::string lastError_, lastWarning_;
   bool aborted_ = false;
+  bool homeDuringSync_ = false;  // Home pressed while the radio held the loop
 
   toybox::Interactions interactions_;
   bool interactionsReady_ = false;

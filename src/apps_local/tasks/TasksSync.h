@@ -59,6 +59,10 @@ class TasksSync {
   // from the queue.
   SyncOutcome sync(State& state, const std::string& today, const Abort& shouldAbort);
 
+  // Only sends the queued check-offs and restores (on the way out of the app):
+  // no lists are read, so no clock is needed and it takes a request per change.
+  SyncOutcome sendOnly(State& state, const Abort& shouldAbort);
+
  private:
   // One request. Returns the HTTP status, 0 on transport failure, -1 when
   // aborted. Notion's reply body lands in out.
