@@ -4,6 +4,7 @@
 #include <Logging.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <ctime>
 
 #include "../ClockFloor.h"
@@ -66,6 +67,11 @@ bool saveState(const State& s) {
 }
 
 std::string today() {
+#if defined(SIMULATOR)
+  // Previews pin the date so the canned tasks in host-tests/tasks/fake land in
+  // the same lists every run.
+  if (const char* fake = std::getenv("TASKS_FAKE_TODAY")) return fake;
+#endif
   const time_t now = time(nullptr);
   if (!clockfloor::trusted(static_cast<int64_t>(now))) return "";
   struct tm parts;

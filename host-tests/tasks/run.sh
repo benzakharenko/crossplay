@@ -23,9 +23,11 @@ BUILD_DIR="${TMPDIR:-/tmp}/$(basename "${CXX:-c++}")-tasks-tests-$(cd ../.. && p
 mkdir -p "$BUILD_DIR"
 
 "${CXX:-c++}" -std=c++17 -O2 -Wall -Wextra -Werror \
-  -isystem "$ARDUINOJSON_DIR" \
+  -isystem "$ARDUINOJSON_DIR" -I../../lib/Utf8 \
+  ../../lib/Utf8/Utf8.cpp \
   ../../src/apps_local/tasks/TasksCore.cpp \
   ../../src/apps_local/tasks/TasksState.cpp \
+  ../../src/apps_local/tasks/TasksText.cpp \
   test_tasks.cpp -o "$BUILD_DIR/test_tasks"
 "$BUILD_DIR/test_tasks"
 
@@ -38,3 +40,15 @@ mkdir -p "$BUILD_DIR"
   test_sync.cpp -o "$BUILD_DIR/test_sync"
 "$BUILD_DIR/test_sync" "$(pwd)/fake" > "$BUILD_DIR/test_sync.log" || { cat "$BUILD_DIR/test_sync.log"; exit 1; }
 tail -1 "$BUILD_DIR/test_sync.log"
+
+# The screens, once per list arrangement while the three are compared.
+SDK=../../freeink-sdk/libs/ui/FreeInkUI
+ICONS=../../freeink-sdk/libs/assets/Icons
+for v in 1 2 3; do
+  "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -Wno-comment -DTASKS_VARIANT=$v \
+    -I"$SDK/include" -I"$ICONS/include" \
+    "$SDK/src/FreeInkUI.cpp" \
+    ../../src/apps_local/tasks/TasksScreens.cpp \
+    test_screens.cpp -o "$BUILD_DIR/test_screens_$v"
+  "$BUILD_DIR/test_screens_$v"
+done

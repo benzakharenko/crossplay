@@ -26,7 +26,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SEAM_FILES = ["src/network/ReleaseSources.h", "src/apps_local/Shelf.cpp"]
 
 SHELF_INCLUDE = '#include "tasks/TasksActivity.h"  // tasks-fork seam'
-SHELF_ROW = '    {"TASKS", &icon_study_32, &TasksActivity::create},  // tasks-fork seam'
+SHELF_ROW = '    {"TASKS", &icon_check_32, &TasksActivity::create},  // tasks-fork seam'
 
 
 def read(rel):

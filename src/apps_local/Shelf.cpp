@@ -50,6 +50,7 @@
 #include "wordle/WordleActivity.h"
 #include "xkcd/XkcdActivity.h"
 #include "yahtzee/YahtzeeActivity.h"
+#include "tasks/TasksActivity.h"  // tasks-fork seam
 
 namespace {
 
@@ -101,6 +102,7 @@ constexpr shelf::Item kApps[] = {
     {"WEATHER", &icon_weather_32, &WeatherActivity::create},
     // Card #762. Appended, for the same reason RSS was.
     {"READING STATS", &icon_readingstats_32, &ReadingStatsActivity::create},
+    {"TASKS", &icon_check_32, &TasksActivity::create},  // tasks-fork seam
 };
 
 // The two rows Home grows, in reading order. Titles are Title Case because

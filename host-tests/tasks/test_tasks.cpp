@@ -7,6 +7,7 @@
 
 #include "../../src/apps_local/tasks/TasksCore.h"
 #include "../../src/apps_local/tasks/TasksState.h"
+#include "../../src/apps_local/tasks/TasksText.h"
 
 static int failures = 0;
 
@@ -468,6 +469,19 @@ static void testState() {
   CHECK(p.remembered.size() == 1 && p.remembered[0].id == "keep");
 }
 
+static void testText() {
+  CHECK_EQ(displayText("Caf\xC3\xA9 \xE2\x80\x9Cplans\xE2\x80\x9D \xE2\x80\x94 now"), "Cafe \"plans\" -- now");
+  CHECK_EQ(displayText("  two\n lines\t here  "), "two lines here");
+  CHECK_EQ(displayText("Gym \xF0\x9F\x8F\x8B\xEF\xB8\x8F"), "Gym");  // emoji dropped
+  CHECK_EQ(displayText("\xE6\x97\xA5\xE6\x9C\xAC"), "");             // CJK: nothing drawable
+  CHECK_EQ(displayTitle("\xE6\x97\xA5\xE6\x9C\xAC"), "(untitled)");
+  CHECK_EQ(displayText("\xC3\x85ngstr\xC3\xB6m"), "Angstrom");
+  CHECK_EQ(shortDate("2026-11-05"), "Nov 5");
+  CHECK_EQ(shortDate("2026-01-31"), "Jan 31");
+  CHECK_EQ(shortDate(""), "");
+  CHECK_EQ(shortDate("2026-13-01"), "");
+}
+
 int main() {
   testConfig();
   testDates();
@@ -478,6 +492,7 @@ int main() {
   testView();
   testLinks();
   testState();
+  testText();
   if (failures) {
     std::fprintf(stderr, "%d failure(s)\n", failures);
     return 1;
