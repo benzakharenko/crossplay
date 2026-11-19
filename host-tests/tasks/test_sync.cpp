@@ -63,6 +63,10 @@ int main(int argc, char** argv) {
   CHECK(m == "t-taxes");
   CHECK(tm == "t-groceries");
   CHECK(c == "t-email");
+  // Sub-items asked for in both rounds are stored once.
+  int plans = 0;
+  for (const Task& task : st.tasks) plans += task.id == "t-plan-cal" ? 1 : 0;
+  CHECK(plans == 1);
 
   // No clock: refuses before any request.
   State st2;

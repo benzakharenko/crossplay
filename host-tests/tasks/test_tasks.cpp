@@ -371,6 +371,16 @@ static void testView() {
   CHECK_EQ(ids(v.tomorrow), "C1");
   CHECK_EQ(ids(v.completed), "B3 X");
 
+  // Checking off a parent keeps its undated sub-items in the parent's day.
+  {
+    std::vector<Task> done = {mk("P", "2026-11-19", "", true), mk("P1", "", "P"), mk("P1a", "", "P1"),
+                              mk("Q", "2026-11-20", "", true), mk("Q1", "", "Q")};
+    View dv = buildView(done, c, today);
+    CHECK_EQ(ids(dv.today), "P1 >P1a");
+    CHECK_EQ(ids(dv.tomorrow), "Q1");
+    CHECK_EQ(ids(dv.completed), "P Q");
+  }
+
   // A child whose parent is open but not in any list stands alone.
   std::vector<Task> orphan = {mk("P", "2026-12-01"), mk("K", "2026-11-19", "P")};
   View o = buildView(orphan, c, today);

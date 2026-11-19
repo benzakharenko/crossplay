@@ -198,6 +198,10 @@ static void testHeadersNeverOrphaned() {
   Target t;
   const std::vector<int> starts = listPageStarts(t, device(), m);
   for (size_t p = 1; p < starts.size(); ++p) CHECK(!rows[static_cast<size_t>(starts[p] - 1)].header);
+  // And the drawing agrees: page one draws nothing from page two.
+  Rendered r;
+  render(r, [&](toybox::Screen& s) { buildList(s, m); });
+  if (starts.size() > 1) CHECK(!r.target.drew(buf[starts[1]]));
 }
 
 static void testEmpty() {

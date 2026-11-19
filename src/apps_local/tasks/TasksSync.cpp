@@ -322,7 +322,15 @@ SyncOutcome TasksSync::sync(State& state, const std::string& today, const Abort&
     }
   }
 
-  state.tasks = std::move(all);
+  // A sub-item can come back in both rounds (it is asked for as a child, then
+  // its own children are asked for); keep each task once.
+  std::vector<Task> unique;
+  unique.reserve(all.size());
+  for (Task& t : all) {
+    if (std::none_of(unique.begin(), unique.end(), [&](const Task& u) { return u.id == t.id; }))
+      unique.push_back(std::move(t));
+  }
+  state.tasks = std::move(unique);
   state.syncedAt = static_cast<int64_t>(time(nullptr));
   pruneRemembered(state, cfg_, today);
   o = SyncOutcome();

@@ -360,12 +360,18 @@ void buildList(toybox::Screen& screen, const ListModel& m) {
     const int16_t lh = t.lineHeight(body.font);
     t.text(fui::makeRect(band.x, static_cast<int16_t>(band.y + band.height / 3), band.width, lh), m.empty, body);
   }
+  // This page ends where the next begins, by the same rule the paging uses.
+  int end = m.count;
+  for (const int start : listPageStarts(t, device, m)) {
+    if (start > m.firstVisible) {
+      end = start;
+      break;
+    }
+  }
   int16_t y = band.y;
-  for (int i = m.firstVisible; i < m.count; ++i) {
+  for (int i = m.firstVisible; i < end; ++i) {
     const RowPlan plan = planRow(t, device, m.rows[i]);
-    if (y + plan.height > band.y + band.height && i > m.firstVisible) break;
-    const bool last = i + 1 >= m.count || y + plan.height + planRow(t, device, m.rows[i + 1]).height >
-                                              band.y + band.height;
+    const bool last = i + 1 >= end;
     const bool nextIsHeader = i + 1 < m.count && m.rows[i + 1].header;
     drawRow(screen, fui::makeRect(band.x, y, band.width, plan.height), m.rows[i], plan, i, !last && !nextIsHeader);
     y = static_cast<int16_t>(y + plan.height);
@@ -450,6 +456,7 @@ void buildDetail(toybox::Screen& screen, const DetailModel& m) {
   const int16_t half = static_cast<int16_t>((footer.width - toybox::kGutter) / 2);
   stripButton(screen, fui::makeRect(footer.x, footer.y, half, footer.height), "BACK", ActionBack, 0, false);
   fui::ButtonProps main;
+  main.text = toybox::buttonText(screen.theme());
   main.label = m.done ? "RESTORE" : "COMPLETE";
   main.action = m.done ? ActionRestore : ActionComplete;
   screen.button(main, fui::makeRect(static_cast<int16_t>(footer.x + half + toybox::kGutter), footer.y, half,

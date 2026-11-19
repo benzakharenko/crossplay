@@ -546,8 +546,29 @@ View buildView(const std::vector<Task>& all, const Config& cfg, const std::strin
     for (const Task* u : uniq) seen = seen || u->id == t.id;
     if (!seen) uniq.push_back(&t);
   }
+  auto indexOfId = [&](const std::string& id) -> int {
+    for (size_t i = 0; i < uniq.size(); ++i)
+      if (uniq[i]->id == id) return static_cast<int>(i);
+    return -1;
+  };
   std::vector<Bucket> own(uniq.size());
-  for (size_t i = 0; i < uniq.size(); ++i) own[i] = bucketFor(*uniq[i], cfg, today, tomorrow);
+  for (size_t i = 0; i < uniq.size(); ++i) {
+    own[i] = bucketFor(*uniq[i], cfg, today, tomorrow);
+    // An open sub-item with no date of its own is due when its parent is,
+    // even after the parent is checked off: it stays in that day's list
+    // rather than vanishing with it.
+    if (own[i] != Bucket::Other || uniq[i]->done || !uniq[i]->due.empty()) continue;
+    int p = indexOfId(uniq[i]->parentId);
+    for (int hops = 0; p >= 0 && hops < 8; ++hops) {
+      if (!uniq[p]->due.empty()) {
+        Task dated = *uniq[i];
+        dated.due = uniq[p]->due;
+        own[i] = bucketFor(dated, cfg, today, tomorrow);
+        break;
+      }
+      p = indexOfId(uniq[p]->parentId);
+    }
+  }
 
   auto isList = [](Bucket b) { return b == Bucket::Missed || b == Bucket::Today || b == Bucket::Tomorrow; };
   auto indexOf = [&](const std::string& id) -> int {
