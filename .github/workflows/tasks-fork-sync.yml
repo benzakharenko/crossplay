@@ -100,6 +100,15 @@ jobs:
           git submodule update --init --recursive
           echo "changed=$([ "$(git rev-parse HEAD)" != "$before" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
+      - name: Refuse to continue if a Notion token is in the repo
+        # Notion integration secrets look like ntn_<46 chars> or secret_<43 chars>.
+        # The token belongs only on the device's SD card (tasks.json).
+        run: |
+          if git grep -nIE '(ntn_[A-Za-z0-9]{40,}|secret_[A-Za-z0-9]{40,})' -- . ; then
+            echo "::error::Something that looks like a Notion token is committed. Remove it from history and revoke it in Notion."
+            exit 1
+          fi
+
       - name: Keep the schedule alive
         # GitHub pauses scheduled workflows after 60 days with no commits.
         run: |
