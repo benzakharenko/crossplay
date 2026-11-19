@@ -1,0 +1,42 @@
+{"object":"list","has_more":false,"next_cursor":null,"type":"page_or_data_source","results":[
+ {"object":"page","id":"t-plan","in_trash":false,"last_edited_time":"2026-11-18T20:00:00.000Z","properties":{
+  "Task":{"type":"title","title":[{"plain_text":"Plan the week"}]},
+  "Category":{"type":"select","select":{"name":"Personal"}},
+  "Due Date":{"type":"date","date":{"start":"2026-11-19"}},
+  "Status":{"type":"status","status":{"name":"In progress"}},
+  "Priority":{"type":"select","select":{"name":"High"}},
+  "Notes":{"type":"rich_text","rich_text":[{"plain_text":"Block out mornings for deep work."}]},
+  "Parent Item":{"type":"relation","relation":[]}}},
+ {"object":"page","id":"t-gym","in_trash":false,"last_edited_time":"2026-11-17T10:00:00.000Z","properties":{
+  "Task":{"type":"title","title":[{"plain_text":"Gym"}]},
+  "Category":{"type":"select","select":{"name":"Health"}},
+  "Due Date":{"type":"date","date":{"start":"2026-11-19"}},
+  "Status":{"type":"status","status":{"name":"Not started"}},
+  "Priority":{"type":"select","select":{"name":"Low"}},
+  "Notes":{"type":"rich_text","rich_text":[]},
+  "Parent Item":{"type":"relation","relation":[]}}},
+ {"object":"page","id":"t-taxes","in_trash":false,"last_edited_time":"2026-11-10T10:00:00.000Z","properties":{
+  "Task":{"type":"title","title":[{"plain_text":"File quarterly taxes"}]},
+  "Category":{"type":"select","select":{"name":"Finance"}},
+  "Due Date":{"type":"date","date":{"start":"2026-11-15"}},
+  "Status":{"type":"status","status":{"name":"Not started"}},
+  "Priority":{"type":"select","select":{"name":"High"}},
+  "Notes":{"type":"rich_text","rich_text":[{"plain_text":"Receipts are in the blue folder."}]},
+  "Parent Item":{"type":"relation","relation":[]}}},
+ {"object":"page","id":"t-groceries","in_trash":false,"last_edited_time":"2026-11-18T09:00:00.000Z","properties":{
+  "Task":{"type":"title","title":[{"plain_text":"Groceries"}]},
+  "Category":{"type":"select","select":{"name":"Home"}},
+  "Due Date":{"type":"date","date":{"start":"2026-11-20"}},
+  "Status":{"type":"status","status":{"name":"Not started"}},
+  "Priority":{"type":"select","select":{"name":"Medium"}},
+  "Notes":{"type":"rich_text","rich_text":[]},
+  "Parent Item":{"type":"relation","relation":[]}}},
+ {"object":"page","id":"t-email","in_trash":false,"last_edited_time":"2026-11-19T08:15:00.000Z","properties":{
+  "Task":{"type":"title","title":[{"plain_text":"Reply to Sam"}]},
+  "Category":{"type":"select","select":{"name":"Work"}},
+  "Due Date":{"type":"date","date":{"start":"2026-11-19"}},
+  "Status":{"type":"status","status":{"name":"Completed"}},
+  "Priority":{"type":"select","select":{"name":"Medium"}},
+  "Notes":{"type":"rich_text","rich_text":[]},
+  "Parent Item":{"type":"relation","relation":[]}}}
+]}

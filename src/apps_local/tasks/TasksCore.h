@@ -47,7 +47,10 @@ struct PropNames {
 // owner's database.
 struct Config {
   std::string token;
+  // Either may be given. "database" takes the database's link (or its id) as
+  // copied from Notion; the app looks up its data source once and caches it.
   std::string dataSourceId;
+  std::string databaseRef;
   PropNames props;
   StatusKind statusKind = StatusKind::Status;
   // Status values that count as done. The first one is written when a task is
@@ -63,7 +66,7 @@ struct Config {
   std::vector<std::string> priorityOrder;
 };
 
-// Parses tasks.json. On failure returns false and sets err to one line a
+// Parses tasks.json. Needs token, and data_source_id or database. On failure returns false and sets err to one line a
 // person can act on ("tasks.json: token is missing").
 bool parseConfig(const std::string& json, Config& out, std::string& err);
 
@@ -126,6 +129,15 @@ const std::string& doneStatus(const Config& cfg);
 // Status to restore a completed task to: its status before it was checked off
 // on this device when known (e.g. "In progress"), otherwise openValue.
 std::string restoreStatus(const Config& cfg, const std::string& previous);
+
+// The 32-hex page/database id in a Notion link or bare id, as a dashed UUID
+// ("1a2b...-...."), or empty when there is none. For a database link the id is
+// the one in the path, not the ?v= view id.
+std::string extractNotionId(const std::string& linkOrId);
+
+// GET /v1/databases/{id} and the first data source id from its reply.
+std::string databasePath(const std::string& databaseId);
+bool parseDatabaseReply(const std::string& body, std::string& dataSourceId, std::string& err);
 
 // Error message from a Notion error reply, or empty.
 std::string errorMessage(const std::string& body);

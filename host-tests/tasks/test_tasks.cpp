@@ -6,6 +6,7 @@
 #include <string>
 
 #include "../../src/apps_local/tasks/TasksCore.h"
+#include "../../src/apps_local/tasks/TasksState.h"
 
 static int failures = 0;
 
@@ -72,6 +73,11 @@ static void testConfig() {
   CHECK(!parseConfig("{", bad, err));
   CHECK(!parseConfig(R"({"data_source_id":"x"})", bad, err));
   CHECK_EQ(err, "tasks.json: token is missing");
+  CHECK(!parseConfig(R"({"token":"t"})", bad, err));
+  CHECK(!parseConfig(R"({"token":"t","database":"not a link"})", bad, err));
+  CHECK(parseConfig(R"({"token":"t","database":"https://www.notion.so/me/1a2b3c4d5e6f40718293a4b5c6d7e8f9?v=0000"})",
+                    bad, err));
+  CHECK_EQ(bad.databaseRef, "https://www.notion.so/me/1a2b3c4d5e6f40718293a4b5c6d7e8f9?v=0000");
   CHECK(!parseConfig(R"({"token":"t","data_source_id":"x","status_type":"bogus"})", bad, err));
   CHECK(parseConfig(R"({"token":"t","data_source_id":"x","done":"Complete",
                         "properties":{"due":"When"}})", bad, err));
@@ -375,6 +381,93 @@ static void testView() {
   CHECK(y.today.size() == 2);
 }
 
+static void testLinks() {
+  const std::string want = "1a2b3c4d-5e6f-4071-8293-a4b5c6d7e8f9";
+  CHECK_EQ(extractNotionId("https://www.notion.so/benz/1a2b3c4d5e6f40718293a4b5c6d7e8f9?v=ffffffffffffffffffffffffffffffff&pvs=4"), want);
+  CHECK_EQ(extractNotionId("https://www.notion.so/Task-List-1a2b3c4d5e6f40718293a4b5c6d7e8f9"), want);
+  CHECK_EQ(extractNotionId("https://www.notion.so/Bead-1a2b3c4d5e6f40718293a4b5c6d7e8f9"), want);  // hex-looking slug
+  CHECK_EQ(extractNotionId("1A2B3C4D-5E6F-4071-8293-A4B5C6D7E8F9"), want);
+  CHECK_EQ(extractNotionId("1a2b3c4d5e6f40718293a4b5c6d7e8f9"), want);
+  CHECK_EQ(extractNotionId("https://www.notion.so/no-id-here"), "");
+  CHECK_EQ(databasePath(want), "/v1/databases/" + want);
+
+  std::string ds, err;
+  CHECK(parseDatabaseReply(R"({"object":"database","id":"d","data_sources":[{"id":"ds-1","name":"Tasks"},{"id":"ds-2"}]})",
+                           ds, err));
+  CHECK_EQ(ds, "ds-1");
+  CHECK(!parseDatabaseReply(R"({"object":"database","data_sources":[]})", ds, err));
+  CHECK(!parseDatabaseReply(
+      R"({"object":"error","status":404,"code":"object_not_found","message":"Could not find database."})", ds, err));
+  CHECK_EQ(err, "Could not find database.");
+}
+
+static void testState() {
+  const char* kToday = "2026-11-19";
+  Config c = config();
+  const std::string today = "2026-11-19";
+  State s;
+  s.dataSourceId = "ds";
+  s.syncedAt = 1795000000;
+  s.tasks = {mk("A", kToday), mk("B", kToday)};
+  s.tasks[0].status = "In progress";
+  s.tasks[0].notes = "line\n\"quoted\"";
+
+  // Check off A: queued, remembered, shown in the bin.
+  markDone(s, c, "A", true, today);
+  CHECK(s.queue.size() == 1);
+  CHECK_EQ(s.queue[0].status, "Completed");
+  CHECK(s.remembered.size() == 1 && s.remembered[0].previous == "In progress");
+  View v = buildView(effectiveTasks(s, c, today), c, today);
+  CHECK_EQ(ids(v.today), "B");
+  CHECK_EQ(ids(v.completed), "A");
+
+  // Restore before any sync: cancels the queued op, back to In progress.
+  markDone(s, c, "A", false, today);
+  CHECK(s.queue.empty());
+  v = buildView(effectiveTasks(s, c, today), c, today);
+  CHECK_EQ(ids(v.today), "A B");
+
+  // Check off, sync acknowledges, then restore: a restore op to In progress.
+  markDone(s, c, "A", true, today);
+  ackOps(s, {"A"});
+  s.tasks[0].status = "Completed";  // what the next sync returns
+  s.tasks[0].done = true;
+  CHECK(s.queue.empty());
+  markDone(s, c, "A", false, today);
+  CHECK(s.queue.size() == 1);
+  CHECK_EQ(s.queue[0].status, "In progress");
+  CHECK(!s.queue[0].done);
+
+  // Restoring a task completed elsewhere (nothing remembered): Not started.
+  State t;
+  t.tasks = {mk("Z", kToday, "", true)};
+  markDone(t, c, "Z", false, today);
+  CHECK(t.queue.size() == 1 && t.queue[0].status == "Not started");
+
+  // Round trip through the card.
+  State back;
+  CHECK(decodeState(encodeState(s), back));
+  CHECK_EQ(back.dataSourceId, "ds");
+  CHECK(back.syncedAt == 1795000000);
+  CHECK(back.tasks.size() == 2);
+  CHECK_EQ(back.tasks[0].notes, "line\n\"quoted\"");
+  CHECK(back.tasks[0].done);
+  CHECK(back.queue.size() == 1 && back.queue[0].status == "In progress");
+  CHECK(back.remembered.size() == 1);
+  CHECK_EQ(encodeState(back), encodeState(s));
+
+  State junk;
+  CHECK(!decodeState("{oops", junk));
+  CHECK(junk.tasks.empty() && junk.syncedAt == 0);
+  CHECK(!decodeState(R"({"v":99})", junk));
+
+  // Memories outlive the bin by a day, then go.
+  State p;
+  p.remembered = {{"old", "In progress", "2026-11-15"}, {"keep", "In progress", "2026-11-16"}};
+  pruneRemembered(p, c, today);
+  CHECK(p.remembered.size() == 1 && p.remembered[0].id == "keep");
+}
+
 int main() {
   testConfig();
   testDates();
@@ -383,6 +476,8 @@ int main() {
   testErrors();
   testTruncation();
   testView();
+  testLinks();
+  testState();
   if (failures) {
     std::fprintf(stderr, "%d failure(s)\n", failures);
     return 1;

@@ -1,6 +1,6 @@
 {
-  "token": "PASTE_YOUR_NOTION_INTEGRATION_SECRET_HERE",
-  "data_source_id": "PASTE_THE_DATA_SOURCE_ID_HERE",
+  "token": "PASTE_YOUR_NOTION_API_TOKEN_HERE",
+  "database": "PASTE_YOUR_DATABASE_LINK_HERE",
 
   "properties": {
     "title": "Task",

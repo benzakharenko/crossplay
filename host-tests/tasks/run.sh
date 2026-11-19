@@ -25,5 +25,16 @@ mkdir -p "$BUILD_DIR"
 "${CXX:-c++}" -std=c++17 -O2 -Wall -Wextra -Werror \
   -isystem "$ARDUINOJSON_DIR" \
   ../../src/apps_local/tasks/TasksCore.cpp \
+  ../../src/apps_local/tasks/TasksState.cpp \
   test_tasks.cpp -o "$BUILD_DIR/test_tasks"
 "$BUILD_DIR/test_tasks"
+
+# The sync orchestration, in its simulator build, against canned replies.
+"${CXX:-c++}" -std=c++17 -O2 -Wall -Wextra -Werror \
+  -Istub -isystem "$ARDUINOJSON_DIR" \
+  ../../src/apps_local/tasks/TasksCore.cpp \
+  ../../src/apps_local/tasks/TasksState.cpp \
+  ../../src/apps_local/tasks/TasksSync.cpp \
+  test_sync.cpp -o "$BUILD_DIR/test_sync"
+"$BUILD_DIR/test_sync" "$(pwd)/fake" > "$BUILD_DIR/test_sync.log" || { cat "$BUILD_DIR/test_sync.log"; exit 1; }
+tail -1 "$BUILD_DIR/test_sync.log"

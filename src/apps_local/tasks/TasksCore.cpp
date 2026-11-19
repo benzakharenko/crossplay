@@ -191,12 +191,17 @@ bool parseConfig(const std::string& json, Config& out, std::string& err) {
   Config cfg;
   cfg.token = doc["token"] | "";
   cfg.dataSourceId = doc["data_source_id"] | "";
+  cfg.databaseRef = doc["database"] | "";
   if (cfg.token.empty()) {
     err = "tasks.json: token is missing";
     return false;
   }
-  if (cfg.dataSourceId.empty()) {
-    err = "tasks.json: data_source_id is missing";
+  if (cfg.dataSourceId.empty() && cfg.databaseRef.empty()) {
+    err = "tasks.json: add your database link as \"database\"";
+    return false;
+  }
+  if (cfg.dataSourceId.empty() && extractNotionId(cfg.databaseRef).empty()) {
+    err = "tasks.json: \"database\" is not a Notion database link";
     return false;
   }
   JsonObjectConst p = doc["properties"];
@@ -405,6 +410,57 @@ const std::string& doneStatus(const Config& cfg) { return cfg.doneValues.front()
 std::string restoreStatus(const Config& cfg, const std::string& previous) {
   if (previous.empty() || isDoneValue(cfg, previous)) return cfg.openValue;
   return previous;
+}
+
+std::string extractNotionId(const std::string& linkOrId) {
+  // Drop the query (?v=<view id>) and fragment, then take the last run of 32
+  // hex digits, dashed or not.
+  std::string s = linkOrId.substr(0, linkOrId.find_first_of("?#"));
+  std::string best;
+  std::string run;
+  auto flush = [&] {
+    if (run.size() == 32) best = run;
+    run.clear();
+  };
+  for (char c : s) {
+    if (std::isxdigit(static_cast<unsigned char>(c))) {
+      run += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+      if (run.size() > 32) run.erase(0, 1);  // keep the trailing 32 of a longer run
+    } else if (c == '-' && !run.empty() && run.size() < 32) {
+      continue;  // dashes inside a UUID
+    } else {
+      flush();
+    }
+  }
+  flush();
+  if (best.empty()) return "";
+  return best.substr(0, 8) + "-" + best.substr(8, 4) + "-" + best.substr(12, 4) + "-" + best.substr(16, 4) + "-" +
+         best.substr(20);
+}
+
+std::string databasePath(const std::string& databaseId) { return "/v1/databases/" + urlEncode(databaseId); }
+
+bool parseDatabaseReply(const std::string& body, std::string& dataSourceId, std::string& err) {
+  JsonDocument filter;
+  filter["object"] = true;
+  filter["message"] = true;
+  filter["data_sources"][0]["id"] = true;
+  JsonDocument doc;
+  if (deserializeJson(doc, body, DeserializationOption::Filter(filter))) {
+    err = "Bad reply from Notion";
+    return false;
+  }
+  if (doc["object"] == "error") {
+    err = doc["message"] | "Notion returned an error";
+    return false;
+  }
+  const char* id = doc["data_sources"][0]["id"] | "";
+  if (!*id) {
+    err = "That database has no data source the integration can see";
+    return false;
+  }
+  dataSourceId = id;
+  return true;
 }
 
 std::string errorMessage(const std::string& body) {
