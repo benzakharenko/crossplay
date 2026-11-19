@@ -1,0 +1,208 @@
+name: Tasks fork - sync CrossPlay and release
+
+# Keeps this fork (CrossPlay + the Notion Tasks app) current with no hands:
+#   1. merge CrossPlay's xteink branch into this fork's tasks branch
+#      (CrossPlay itself merges CrossPoint, so both arrive this way);
+#   2. if a conflict is only in a seam file, take CrossPlay's copy and
+#      re-apply our edit (tasks_fork/apply_seams.py); any other conflict
+#      stops the run, and GitHub emails you that it failed;
+#   3. build the Sticky firmware and publish a release named the way the
+#      device's updater expects (firmware-sticky.bin), plus a -full.bin for
+#      a first-time USB flash.
+# Then Settings > Check for updates on the Sticky installs it.
+#
+# Needs ONE secret, SYNC_TOKEN: a fine-grained token for this repo with
+# Contents: read/write and Workflows: read/write. GITHUB_TOKEN cannot push a
+# merge that touches .github/workflows/, and CrossPlay edits its workflows
+# often. See tasks_fork/README.md.
+
+on:
+  schedule:
+    - cron: '23 11 * * *'   # daily, 03:23 Pacific
+  push:
+    branches: [tasks]        # your own changes ship too
+  workflow_dispatch:
+    inputs:
+      force_release:
+        description: Release even if nothing changed
+        type: boolean
+        default: false
+
+concurrency:
+  group: tasks-fork-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+
+env:
+  UPSTREAM: https://github.com/ma-r-s/crossplay.git
+  UPSTREAM_BRANCH: xteink
+  BRANCH: tasks
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.decide.outputs.release }}
+      sha: ${{ steps.decide.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.BRANCH }}
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN }}
+
+      - name: Switch off CrossPlay's own workflows in this fork
+        # They target CrossPlay's site, board and release machinery and would
+        # fail or burn minutes here. Idempotent; re-run every time because a
+        # merge can add new ones.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for wf in .github/workflows/*.yml; do
+            name="$(basename "$wf")"
+            [ "$name" = "tasks-fork-sync.yml" ] && continue
+            gh workflow disable "$name" --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+          done
+
+      - name: Merge CrossPlay
+        id: merge
+        run: |
+          set -euo pipefail
+          git config user.name  "tasks-fork-bot"
+          git config user.email "tasks-fork-bot@users.noreply.github.com"
+          git remote add upstream "$UPSTREAM"
+          git fetch --no-tags upstream "$UPSTREAM_BRANCH"
+          before="$(git rev-parse HEAD)"
+          if git merge --no-edit "upstream/$UPSTREAM_BRANCH"; then
+            echo "Merged cleanly."
+          else
+            conflicted="$(git diff --name-only --diff-filter=U)"
+            echo "Conflicts in:"; echo "$conflicted"
+            for f in $conflicted; do
+              case "$f" in
+                src/network/ReleaseSources.h|src/apps_local/Shelf.cpp)
+                  git checkout --theirs -- "$f"; git add "$f" ;;
+                *)
+                  echo "::error file=$f::Conflict outside a seam file. Merge by hand (see tasks_fork/README.md)."
+                  exit 1 ;;
+              esac
+            done
+            git commit --no-edit
+          fi
+          python3 tasks_fork/apply_seams.py
+          if ! git diff --quiet; then
+            git commit -am "tasks-fork: re-apply seams after CrossPlay merge"
+          fi
+          python3 tasks_fork/apply_seams.py --check
+          git submodule update --init --recursive
+          echo "changed=$([ "$(git rev-parse HEAD)" != "$before" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Keep the schedule alive
+        # GitHub pauses scheduled workflows after 60 days with no commits.
+        run: |
+          last="$(git log -1 --format=%ct)"
+          if [ $(( $(date +%s) - last )) -gt $(( 50 * 86400 )) ]; then
+            git commit --allow-empty -m "tasks-fork: keepalive"
+          fi
+
+      - name: Push
+        run: git push origin "HEAD:$BRANCH"
+
+      - name: Decide whether to release
+        id: decide
+        run: |
+          sha="$(git rev-parse HEAD)"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          last_tag="$(git tag --points-at "$sha" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)"
+          if [ -n "$last_tag" ] && [ "${{ inputs.force_release }}" != "true" ]; then
+            echo "HEAD is already released as $last_tag."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ steps.merge.outputs.changed }}" = "true" ] || [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Nothing new from CrossPlay."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  release:
+    needs: sync
+    if: needs.sync.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.sync.outputs.sha }}
+          fetch-depth: 0
+          submodules: recursive
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+          enable-cache: false
+
+      # Same toolchain setup as CrossPlay's ci.yml; keep in step with it.
+      - name: Install PlatformIO Core
+        run: |
+          uv pip install --system -U https://github.com/pioarduino/platformio-core/archive/refs/tags/v6.1.19.zip
+          uv pip install --system -U "littlefs-python>=0.16.0" "fatfs-ng>=0.1.14" "pyyaml>=6.0.2" \
+            "rich-click>=1.8.6" "zopfli>=0.2.2" "intelhex>=2.3.0" "rich>=14.0.0" "urllib3<2" \
+            "cryptography>=45.0.3" "certifi>=2025.8.3" "ecdsa>=0.19.1" "bitstring>=4.3.1" \
+            "reedsolo>=1.5.3,<1.8" "esp-idf-size>=2.0.0" "esp-coredump>=1.14.0"
+
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-tasks-${{ runner.os }}-${{ hashFiles('platformio.ini', 'scripts/patch_pioarduino_cache.py') }}
+          restore-keys: pio-tasks-${{ runner.os }}-
+
+      - name: Pin pioarduino core inside the platform penv
+        run: |
+          pio pkg install -e gh_release_sticky
+          uv pip install --python ~/.platformio/penv/bin/python "pioarduino==6.1.19"
+
+      - name: Version
+        id: version
+        run: |
+          v="$(python3 tasks_fork/next_version.py)"
+          python3 tasks_fork/next_version.py --stamp "$v"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$v"
+
+      - name: Host tests for the Tasks app
+        run: |
+          if [ -x host-tests/tasks/run.sh ]; then host-tests/tasks/run.sh; else echo "no Tasks tests yet"; fi
+
+      - name: Build Sticky firmware
+        run: pio run -e gh_release_sticky
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          B=.pio/build/gh_release_sticky
+          V="${{ steps.version.outputs.version }}"
+          mkdir dist
+          # Offsets as CrossPlay's ship.sh writes them for the S3.
+          ~/.platformio/penv/bin/python ~/.platformio/packages/tool-esptoolpy/esptool.py \
+            --chip esp32s3 merge-bin --format raw -o "dist/crossplay-tasks-$V-sticky-full.bin" \
+            -fm keep -fs keep -ff keep \
+            0x0 "$B/bootloader.bin" 0x8000 "$B/partitions.bin" 0x10000 "$B/firmware.bin"
+          # The updater looks for exactly this name.
+          cp "$B/firmware.bin" dist/firmware-sticky.bin
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${{ steps.version.outputs.version }}"
+          gh release create "v$V" dist/* --repo "$GITHUB_REPOSITORY" \
+            --target "${{ needs.sync.outputs.sha }}" --title "CrossPlay + Tasks v$V" \
+            --notes "Automatic build from $(git log -1 --format=%h) on tasks. Sticky: Settings > Check for updates. First install over USB: use the -full.bin."
